@@ -10,6 +10,10 @@ Status: Stage 3 (core control, device lists, dashboard card). Installable as a H
   - for per-device controls, a blocking rule per device (until the integration can create them);
   - a local, view-only UniFi admin for device status and speeds.
 - HACS, for the one-click install.
+- **No other HACS components are needed.** The cards are built into the integration and use only Home Assistant's own
+  building blocks: no Mushroom, button-card, card-mod or similar. The integration registers its card itself.
+- A switch that blocks each child on the router. For UniFi, the built-in **UniFi Network** integration (no HACS)
+  provides one per UniFi group or client rule.
 
 ## Install with HACS (custom repository)
 
