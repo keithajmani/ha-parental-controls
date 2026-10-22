@@ -1,13 +1,20 @@
 {
   "domain": "parental_controls",
   "name": "Parental Controls",
-  "codeowners": ["@keithajmani"],
+  "codeowners": [
+    "@keithajmani"
+  ],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": [
+    "http"
+  ],
   "documentation": "https://github.com/keithajmani/ha-parental-controls",
   "integration_type": "service",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/keithajmani/ha-parental-controls/issues",
   "requirements": [],
-  "version": "0.2.0"
+  "version": "0.3.0",
+  "after_dependencies": [
+    "frontend"
+  ]
 }

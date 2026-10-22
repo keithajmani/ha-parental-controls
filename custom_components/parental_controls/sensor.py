@@ -16,6 +16,7 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddE
 
 class InternetSensor(ChildEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.ENUM
+    _unrecorded_attributes = frozenset({"minutes_left", "config_entry_id", "child", "block_entity"})
     _attr_options = [s.value for s in State]
 
     def __init__(self, ctl) -> None:
@@ -45,6 +46,12 @@ class InternetSensor(ChildEntity, SensorEntity):
             "manual_blocked": self.ctl.kid.manual_blocked,
             "allowed_tonight": self.ctl.kid.allowed_tonight,
             "bedtime_enabled": b.enabled,
+            "bedtime_weeknight_start": b.weeknight_start.strftime("%H:%M"),
+            "bedtime_weekend_start": b.weekend_start.strftime("%H:%M"),
+            "bedtime_end": b.end.strftime("%H:%M"),
+            "bedtime_now": self.ctl.kid.bedtime.active_window(dt_util.now()) is not None,
+            "config_entry_id": self.ctl.entry_id,
+            "child": self.ctl.name,
             "block_entity": self.ctl.block_entity,
         }
 

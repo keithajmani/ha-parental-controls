@@ -3,10 +3,10 @@
 Block, pause and schedule each child's internet on your home router from one Home Assistant screen per child.
 Optional per-device controls and device status (UniFi first).
 
-> **Early draft — not ready for general use.** This is Stage 1 of 4: the core control works and is tested, but
-> there is no dashboard card yet, device control is not built, and the setup may change without a migration path.
+> **Early draft — not ready for general use.** Stage 3 of 4: core control, device lists and the dashboard card work
+> and are tested, but the setup may still change without a migration path.
 
-Status: **Stage 1** — per-child block / pause / allow-for / bedtime, set up from the UI, with tests.
+Status: **Stage 3** — per-child block / pause / allow-for / bedtime, UniFi device lists with per-device blocks, and a dashboard card (`custom:parental-controls-card`).
 Install by hand or as a HACS custom repository: see [docs/install.md](docs/install.md).
 
 - Design: [docs/design.md](docs/design.md)

@@ -155,3 +155,11 @@ async def test_new_child_adopts_a_blocked_switch(hass):
     await setup_child(hass)
     assert hass.states.get(SW).state == "on"           # not unblocked by adding the child
     assert hass.states.get(SENSOR).state == "blocked"
+
+
+async def test_card_is_served(hass, hass_client):
+    await setup_child(hass)
+    client = await hass_client()
+    r = await client.get("/parental_controls/parental-controls-card.js")
+    assert r.status == 200
+    assert "customElements.define(\"parental-controls-card\"" in await r.text()

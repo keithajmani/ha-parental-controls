@@ -6,6 +6,8 @@ the router's block switch.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
@@ -37,8 +39,26 @@ PAUSE_SCHEMA = CHILD_SCHEMA.extend(
     {vol.Optional(ATTR_MINUTES): vol.All(vol.Coerce(int), vol.Range(min=MIN_PAUSE_MINUTES, max=MAX_PAUSE_MINUTES))})
 
 
+CARD_URL = "/parental_controls/parental-controls-card.js"
+
+
+async def _async_register_card(hass: HomeAssistant) -> None:
+    """Serve the dashboard card from the integration and load it in the frontend: no resource to add by hand."""
+    from homeassistant.components.frontend import add_extra_js_url
+    from homeassistant.components.http import StaticPathConfig
+    from homeassistant.loader import async_get_integration
+
+    version = (await async_get_integration(hass, DOMAIN)).version
+    path = Path(__file__).parent / "frontend" / "parental-controls-card.js"
+    await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(path), True)])
+    if "frontend" in hass.config.components:   # always true in a real install; absent in some test setups
+        add_extra_js_url(hass, f"{CARD_URL}?v={version}")
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the services once: parental_controls.block / allow / pause."""
+    """Register the card and the services once: parental_controls.block / allow / pause / refresh_devices."""
+    if getattr(hass, "http", None) is not None:
+        await _async_register_card(hass)
 
     def child(call: ServiceCall) -> ChildController:
         entry = hass.config_entries.async_get_entry(call.data[ATTR_CHILD])

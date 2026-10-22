@@ -1,6 +1,6 @@
 # Parental Controls for Home Assistant — design
 
-Status: Stage 2 built (core control and device lists). Stage 3 (card) next.
+Status: Stage 3 built (core control, device lists, card). Stage 4 (HACS polish, CI, brands) next.
 
 ## Goal
 

@@ -1,6 +1,6 @@
 # Installing Parental Controls
 
-Status: Stage 2 (core control + device lists). Installable as a HACS custom repository. Dashboard card comes in Stage 3.
+Status: Stage 3 (core control, device lists, dashboard card). Installable as a HACS custom repository.
 
 ## Requirements
 
@@ -44,6 +44,23 @@ Status: Stage 2 (core control + device lists). Installable as a HACS custom repo
 
 Device status is fetched only when asked (Check devices, or Live for up to 5 minutes) and the device list is not
 written to Home Assistant's history.
+
+### The card
+
+The integration serves its own card; there is no dashboard resource to add. Edit a dashboard → Add card → search
+"Parental Controls", pick the child, or in YAML:
+
+```yaml
+type: custom:parental-controls-card
+entity: sensor.riley_parental_controls_internet   # the child's Internet sensor
+# title: Riley's Internet      (optional; default "<Child>'s Internet", empty string to hide)
+# max_minutes: 60              (optional; the Custom slider's maximum)
+```
+
+One card per child, typically one dashboard view (tab) per child. The card shows the status with a Block / Allow
+button, Pause (or Allow for, when blocked) with 15 / 30 / 60 and a Custom slider, and Devices (tap to show;
+opening it runs a check; Live refreshes every 5 s). A device with its own block switch gets a block / allow button.
+After an update, refresh the browser (or the app) once so it loads the new card.
 
 To remove: delete the integration entries, then the folder, then restart.
 
