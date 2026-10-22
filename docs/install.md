@@ -47,6 +47,9 @@ Status: Stage 3 (core control, device lists, dashboard card). Installable as a H
    on its own while the rest of the group stays online. Each device with a block switch gets a
    "<device> blocked" switch on the child.
 
+If a child's block switch (or a device's own block switch) goes missing or unavailable for 5 minutes, Home Assistant
+shows a notice under **Settings → Repairs** explaining what to fix; it clears itself when the switch is back.
+
 Device status is fetched only when asked (Check devices, or Live for up to 5 minutes) and the device list is not
 written to Home Assistant's history.
 

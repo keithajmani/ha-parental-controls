@@ -184,3 +184,18 @@ async def test_a_console_with_several_sites_asks_which(hass, aioclient_mock):
     assert r["step_id"] == "site"
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"site": "x1"})
     assert r["type"] == "create_entry" and r["result"].data["site"] == "x1"
+
+
+async def test_missing_device_block_switch_raises_a_repair(hass, unifi, freezer):
+    from datetime import timedelta
+    from homeassistant.helpers import issue_registry as ir
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+    await add_router(hass)
+    entry = await add_child(hass)
+    hass.config_entries.async_update_entry(entry, options={**entry.options, "devices": {
+        "cc:cc:cc:cc:cc:01": {"name": "Den speaker", "block_entity": "switch.gone"}}})
+    await hass.async_block_till_done()
+    for _ in range(12):
+        freezer.tick(timedelta(seconds=30)); async_fire_time_changed(hass); await hass.async_block_till_done()
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, f"{entry.entry_id}_device_cccccccccc01")
+    assert issue is not None and issue.translation_placeholders["device"] == "Den speaker"

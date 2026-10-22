@@ -19,10 +19,11 @@ from homeassistant.helpers.event import (
     async_track_state_change_event,
     async_track_time_interval,
 )
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
-from .const import DEFAULT_PAUSE_MINUTES, DOMAIN, STORAGE_VERSION, TICK_SECONDS
+from .const import DEFAULT_PAUSE_MINUTES, DOMAIN, STORAGE_VERSION, SWITCH_GRACE, TICK_SECONDS
 from .engine import Kid, Status
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ class ChildController:
         self._override_timer: CALLBACK_TYPE | None = None
         self._own_contexts: set[str] = set()
         self._last: tuple | None = None
+        self._bad_since: dict[str, datetime] = {}   # switch entity -> when it was first seen missing / unavailable
         self.devices = None   # ChildDevices, set by __init__   # (status, saved state) after the last update, to spot changes on a tick
 
     # ---- lifecycle ----------------------------------------------------------------------------------
@@ -150,7 +152,31 @@ class ChildController:
         self._override_timer = None
         await self._async_update()
 
+    # ---- repairs ------------------------------------------------------------------------------------
+    @callback
+    def _check_switches(self, now: datetime) -> None:
+        """Raise a Repairs issue when the child's block switch, or a device's own block switch, has been missing or
+        unavailable for SWITCH_GRACE (e.g. the router integration or rule was removed). Clears it when it's back."""
+        targets = [(f"{self.entry_id}_block_switch", "block_switch_missing", self.block_entity, None)]
+        for mac, cfg in (self.devices.configured.items() if self.devices else []):
+            if cfg.get("block_entity"):
+                targets.append((f"{self.entry_id}_device_{mac.replace(':', '')}", "device_block_switch_missing",
+                                cfg["block_entity"], cfg.get("name") or mac))
+        for issue_id, key, entity, device in targets:
+            st = self.hass.states.get(entity)
+            reason = "missing" if st is None else ("unavailable" if st.state in ("unavailable", "unknown") else None)
+            if reason is None:
+                self._bad_since.pop(entity, None)
+                ir.async_delete_issue(self.hass, DOMAIN, issue_id)
+                continue
+            since = self._bad_since.setdefault(entity, now)
+            if now - since >= SWITCH_GRACE:
+                ir.async_create_issue(self.hass, DOMAIN, issue_id, is_fixable=False, severity=ir.IssueSeverity.WARNING,
+                                      translation_key=key, translation_placeholders={
+                                          "child": self.name, "entity": entity, "reason": reason, "device": device or ""})
+
     async def _on_tick(self, _now: datetime) -> None:
+        self._check_switches(dt_util.now())
         # Bedtime starting or ending changes the status without any stored field changing, so compare the
         # derived status as well as the saved state with what we last applied.
         now = dt_util.now()

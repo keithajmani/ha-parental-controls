@@ -114,12 +114,26 @@ class ParentalControlsCard extends HTMLElement {
     root.querySelector("#scrim")?.addEventListener("click", (ev) => { if (ev.target.id === "scrim") this._closePopup(); });
     root.querySelector("#btsw2")?.addEventListener("click", () => this._call("switch", "toggle", { entity_id: ids.bedtime }));
     this._wireSteps(root);
+    this._placePopup();
     if (!this._focused) { root.querySelector("#btclose")?.focus(); this._focused = true; }
+  }
+
+  // Centre the pop-up over this card rather than the whole window: on a desktop the sidebar shifts the dashboard
+  // right, so a window-centred pop-up looks offset. On a phone the card spans the screen, so it stays centred.
+  _placePopup() {
+    const sheet = this._popEl?.shadowRoot.querySelector(".sheet");
+    if (!sheet) return;
+    const card = this.getBoundingClientRect(), vw = window.innerWidth, w = sheet.offsetWidth;
+    const centre = card.width ? card.left + card.width / 2 : vw / 2;
+    const left = Math.max(16, Math.min(vw - w - 16, centre - w / 2));
+    sheet.style.marginLeft = `${Math.round(left)}px`;
+    if (!this._onResize) { this._onResize = () => this._placePopup(); window.addEventListener("resize", this._onResize); }
   }
   _closePopup() { this._popup = false; this._closePopupEl(); }
   _closePopupEl() {
     if (this._popEl) { this._popEl.remove(); this._popEl = null; }
     if (this._onKey) { window.removeEventListener("keydown", this._onKey); this._onKey = null; }
+    if (this._onResize) { window.removeEventListener("resize", this._onResize); this._onResize = null; }
     this._focused = false;
   }
   disconnectedCallback() { this._closePopupEl(); }
@@ -286,7 +300,7 @@ button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 
 .globe { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; --mdc-icon-size: 24px; }
 .globe.block, .dglobe.block { background: rgba(244,67,54,0.24); color: #ef9a9a; }
 .globe.allow, .dglobe.allow { background: rgba(76,175,80,0.26); color: #a5d6a7; }
-.chiprow { margin: 8px 0 0 46px; }   /* pill content (moon icon) lines up with the text above, as on the old dashboard */
+.chiprow { margin: 8px 0 0 56px; }   /* the pill's left edge lines up with the status text above */
 .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; border-radius: 12px; padding: 4px 10px; --mdc-icon-size: 15px; }
 .chip.off { color: #9e9e9e; background: rgba(127,127,127,0.12); }
 button.chip { cursor: pointer; }
@@ -348,9 +362,9 @@ button.chip { cursor: pointer; }
 `;
 
 const POPUP_CSS = `
-.scrim { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center;
-  padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px)); }
-.sheet { width: min(420px, 100%); background: var(--ha-card-background, var(--card-background-color, #1c1c1c)); border-radius: 18px;
+.scrim { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: flex-start;
+  padding: max(16px, env(safe-area-inset-top, 0px)) 0 max(16px, env(safe-area-inset-bottom, 0px)); }
+.sheet { box-sizing: border-box; width: min(420px, calc(100vw - 32px)); flex: none; background: var(--ha-card-background, var(--card-background-color, #1c1c1c)); border-radius: 18px;
   padding: 8px 16px 6px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); color: var(--primary-text-color); }
 .shead { display: flex; justify-content: space-between; align-items: center; min-height: 44px; }
 .stitle { font-size: 18px; font-weight: 600; }

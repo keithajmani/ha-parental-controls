@@ -146,5 +146,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ParentalControlsConfigE
     return ok
 
 
+async def async_remove_entry(hass: HomeAssistant, entry: ParentalControlsConfigEntry) -> None:
+    """A child was deleted: remove its Repairs issues."""
+    from homeassistant.helpers import issue_registry as ir
+    for issue in list(ir.async_get(hass).issues.values()):
+        if issue.domain == DOMAIN and issue.issue_id.startswith(entry.entry_id):
+            ir.async_delete_issue(hass, DOMAIN, issue.issue_id)
+
+
 async def _async_reload(hass: HomeAssistant, entry: ParentalControlsConfigEntry) -> None:
     await hass.config_entries.async_reload(entry.entry_id)

@@ -194,3 +194,22 @@ def test_card_file_is_ascii_and_defines_both_cards():
     js = (Path(__file__).parent.parent / "custom_components/parental_controls/frontend/parental-controls-card.js").read_text()
     assert js.isascii()                       # reads the same whatever charset it is served with
     assert 'define("parental-controls-card"' in js and 'define("parental-controls-settings-card"' in js
+
+
+async def test_missing_block_switch_raises_a_repair_and_clears_it(hass, freezer):
+    from homeassistant.helpers import issue_registry as ir
+    entry = MockConfigEntry(domain=DOMAIN, title="Sam", unique_id="sam",
+                            data={"kind": "child", "child_name": "Sam", "block_entity": "input_boolean.sam_block"})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)       # switch doesn't exist yet
+    await hass.async_block_till_done()
+    issue_id = f"{entry.entry_id}_block_switch"
+    freezer.tick(timedelta(minutes=1)); async_fire_time_changed(hass); await hass.async_block_till_done()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None    # still within the grace period
+    for _ in range(11):
+        freezer.tick(timedelta(seconds=30)); async_fire_time_changed(hass); await hass.async_block_till_done()
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
+    assert issue is not None and issue.translation_placeholders["reason"] == "missing"
+    assert await async_setup_component(hass, "input_boolean", {"input_boolean": {"sam_block": {}}})
+    freezer.tick(timedelta(seconds=31)); async_fire_time_changed(hass); await hass.async_block_till_done()
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None    # cleared once the switch is back

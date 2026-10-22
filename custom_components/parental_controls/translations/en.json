@@ -209,5 +209,15 @@
     "unknown_child": {
       "message": "That child isn't set up in Parental Controls."
     }
+  },
+  "issues": {
+    "block_switch_missing": {
+      "title": "{child}'s block switch is {reason}",
+      "description": "Parental Controls blocks {child} through `{entity}`, which has been {reason} for a few minutes, so Block, Pause and bedtime can't reach the router.\n\nIf the switch was removed or renamed (for example the router integration or its rule was deleted), pick another one: **Settings \u2192 Devices & services \u2192 Parental Controls \u2192 {child} \u2192 Configure \u2192 Block switch and router group**. This notice clears by itself once the switch is back."
+    },
+    "device_block_switch_missing": {
+      "title": "Block switch for {device} ({child}) is {reason}",
+      "description": "The switch that blocks {device} on its own, `{entity}`, has been {reason} for a few minutes, so its block button on {child}'s card can't work.\n\nPick another one, or remove the device: **Settings \u2192 Devices & services \u2192 Parental Controls \u2192 {child} \u2192 Configure \u2192 Remove devices**, then add it again with a new switch. This notice clears by itself once the switch is back."
+    }
   }
 }

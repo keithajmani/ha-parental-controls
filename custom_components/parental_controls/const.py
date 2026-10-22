@@ -1,4 +1,6 @@
 """Constants for Parental Controls."""
+from datetime import timedelta
+
 DOMAIN = "parental_controls"
 
 CONF_CHILD_NAME = "child_name"
@@ -7,7 +9,8 @@ CONF_BLOCK_ENTITY = "block_entity"     # the router's block switch for the child
 DEFAULT_PAUSE_MINUTES = 15
 MIN_PAUSE_MINUTES = 1
 MAX_PAUSE_MINUTES = 240
-TICK_SECONDS = 30                      # bedtime starts/ends are applied within this many seconds
+TICK_SECONDS = 30
+SWITCH_GRACE = timedelta(minutes=5)          # a block switch must be missing/unavailable this long before a Repairs issue                      # bedtime starts/ends are applied within this many seconds
 
 STORAGE_VERSION = 1
 
