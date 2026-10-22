@@ -9,12 +9,13 @@
     "http"
   ],
   "documentation": "https://github.com/keithajmani/ha-parental-controls",
-  "integration_type": "service",
+  "integration_type": "hub",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/keithajmani/ha-parental-controls/issues",
   "requirements": [],
-  "version": "0.3.0",
+  "version": "0.3.1",
   "after_dependencies": [
-    "frontend"
+    "frontend",
+    "lovelace"
   ]
 }

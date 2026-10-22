@@ -26,3 +26,5 @@ CONF_PICKED = "picked"
 
 LIVE_INTERVAL = 5                      # seconds between refreshes while Live is on
 LIVE_TIMEOUT = 300                     # Live switches itself off after this many seconds
+CONF_VENDOR = "vendor"                 # router vendor; only "unifi" so far
+VENDORS = {"unifi": "UniFi (UniFi OS consoles: Cloud Gateway, Dream Machine, Dream Router, Cloud Key)"}

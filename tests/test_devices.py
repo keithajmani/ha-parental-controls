@@ -28,6 +28,7 @@ def auto_enable_custom_integrations(enable_custom_integrations):
 @pytest.fixture
 def unifi(aioclient_mock):
     aioclient_mock.post(f"{U}/api/auth/login", json={}, headers={"X-CSRF-Token": "t"})
+    aioclient_mock.get(f"{NET}/api/self/sites", json={"data": [{"name": "default", "desc": "Default"}]})
     aioclient_mock.get(f"{NET}/v2/api/site/default/network-members-groups", json=GROUPS)
     aioclient_mock.get(f"{NET}/api/s/default/rest/user", json={"data": USERS})
     aioclient_mock.get(f"{NET}/api/s/default/stat/device", json={"data": DEVICES})
@@ -38,9 +39,11 @@ def unifi(aioclient_mock):
 async def add_router(hass):
     r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "router"})
-    r = await hass.config_entries.flow.async_configure(
-        r["flow_id"], {"host": HOST, "username": "ro", "password": "pw", "site": "default"})
-    assert r["type"] == "create_entry", r
+    assert r["step_id"] == "router"                       # pick the router vendor first
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"vendor": "unifi"})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"host": HOST, "username": "ro", "password": "pw"})
+    assert r["type"] == "create_entry", r                 # one site: picked automatically, no Site question
+    assert r["result"].data["site"] == "default" and r["result"].data["vendor"] == "unifi"
     await hass.async_block_till_done()
     return r["result"]
 
@@ -68,8 +71,8 @@ async def test_router_flow_rejects_a_bad_login(hass, aioclient_mock):
     aioclient_mock.post(f"{U}/api/auth/login", status=401)
     r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "router"})
-    r = await hass.config_entries.flow.async_configure(
-        r["flow_id"], {"host": HOST, "username": "ro", "password": "bad", "site": "default"})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"vendor": "unifi"})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"host": HOST, "username": "ro", "password": "bad"})
     assert r["type"] == "form" and r["errors"] == {"base": "invalid_auth"}
 
 
@@ -166,3 +169,18 @@ async def test_device_list_is_not_recorded(hass, unifi):
     await add_child(hass)
     from custom_components.parental_controls.sensor import DevicesSensor
     assert "devices" in DevicesSensor._unrecorded_attributes
+
+
+async def test_a_console_with_several_sites_asks_which(hass, aioclient_mock):
+    aioclient_mock.post(f"{U}/api/auth/login", json={}, headers={"X-CSRF-Token": "t"})
+    aioclient_mock.get(f"{NET}/api/self/sites", json={"data": [{"name": "default", "desc": "Home"}, {"name": "x1", "desc": "Cottage"}]})
+    aioclient_mock.get(f"{U}/proxy/network/v2/api/site/x1/network-members-groups", json=GROUPS)
+    aioclient_mock.get(f"{U}/proxy/network/api/s/x1/rest/user", json={"data": USERS})
+    aioclient_mock.get(f"{U}/proxy/network/api/s/x1/stat/device", json={"data": DEVICES})
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "router"})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"vendor": "unifi"})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"host": HOST, "username": "ro", "password": "pw"})
+    assert r["step_id"] == "site"
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"site": "x1"})
+    assert r["type"] == "create_entry" and r["result"].data["site"] == "x1"

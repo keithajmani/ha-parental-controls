@@ -6,6 +6,7 @@ the router's block switch.
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import voluptuous as vol
@@ -18,14 +19,13 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
-from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .const import (CONF_BLOCK_ENTITY, CONF_CHILD_NAME, CONF_DEVICES, CONF_HOST, CONF_KIND, CONF_PASSWORD,
                     CONF_ROUTER_GROUP, CONF_SITE, CONF_USERNAME, DOMAIN, KIND_ROUTER, MAX_PAUSE_MINUTES,
                     MIN_PAUSE_MINUTES)
 from .controller import ChildController
 from .devices import ChildDevices
-from .unifi import UniFiAuthError, UniFiClient, UniFiError
+from .unifi import UniFiAuthError, UniFiClient, UniFiError, unifi_session
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 PLATFORMS = [Platform.SENSOR, Platform.BUTTON, Platform.NUMBER, Platform.SWITCH, Platform.TIME]
@@ -39,20 +39,46 @@ PAUSE_SCHEMA = CHILD_SCHEMA.extend(
     {vol.Optional(ATTR_MINUTES): vol.All(vol.Coerce(int), vol.Range(min=MIN_PAUSE_MINUTES, max=MAX_PAUSE_MINUTES))})
 
 
+_LOGGER = logging.getLogger(__name__)
 CARD_URL = "/parental_controls/parental-controls-card.js"
 
 
 async def _async_register_card(hass: HomeAssistant) -> None:
-    """Serve the dashboard card from the integration and load it in the frontend: no resource to add by hand."""
-    from homeassistant.components.frontend import add_extra_js_url
+    """Serve the dashboard card from the integration and add it as a dashboard resource, so nobody has to.
+
+    It is registered as a normal Lovelace resource (like a HACS card) rather than an early-loaded frontend module:
+    a module that loads before the dashboard's element registry is ready ends up invisible to the dashboard.
+    """
     from homeassistant.components.http import StaticPathConfig
     from homeassistant.loader import async_get_integration
 
     version = (await async_get_integration(hass, DOMAIN)).version
     path = Path(__file__).parent / "frontend" / "parental-controls-card.js"
     await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(path), True)])
-    if "frontend" in hass.config.components:   # always true in a real install; absent in some test setups
-        add_extra_js_url(hass, f"{CARD_URL}?v={version}")
+    url = f"{CARD_URL}?v={version}"
+
+    async def add_resource(_event=None) -> None:
+        lovelace = hass.data.get("lovelace")
+        resources = getattr(lovelace, "resources", None)
+        if resources is None or not hasattr(resources, "async_create_item"):
+            # dashboards in YAML mode: the resource has to be added by hand (see docs/install.md)
+            _LOGGER.info("Parental Controls: add %s as a dashboard resource (type: module)", url)
+            return
+        if not resources.loaded:
+            await resources.async_load()
+            resources.loaded = True
+        for item in resources.async_items():
+            if item.get("url", "").split("?")[0] == CARD_URL:
+                if item["url"] != url:   # new version: bump the URL so browsers fetch the new card
+                    await resources.async_update_item(item["id"], {"res_type": "module", "url": url})
+                return
+        await resources.async_create_item({"res_type": "module", "url": url})
+
+    if hass.data.get("lovelace") is not None:
+        await add_resource()
+    else:
+        from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, add_resource)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -90,7 +116,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ParentalControlsConfigEntry) -> bool:
     if entry.data.get(CONF_KIND) == KIND_ROUTER:
         # the router entry only holds the (view-only) login; children use it for their Devices list
-        client = UniFiClient(async_create_clientsession(hass, verify_ssl=False), entry.data[CONF_HOST],
+        client = UniFiClient(unifi_session(hass), entry.data[CONF_HOST],
                              entry.data[CONF_USERNAME], entry.data[CONF_PASSWORD], entry.data.get(CONF_SITE, "default"))
         try:
             await client.login()

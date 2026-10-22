@@ -16,13 +16,23 @@ import fnmatch
 import time
 from dataclasses import dataclass, field
 
+import logging
+
 import aiohttp
 
 from .provider import Client
 
+_LOGGER = logging.getLogger(__name__)
 CACHE_TTL = 600
 RATE_WINDOW = 20
 RATE_MIN_SPAN = 4
+
+
+def unifi_session(hass) -> aiohttp.ClientSession:
+    """A session for the UniFi console. Consoles are usually addressed by IP, and aiohttp's default cookie jar
+    refuses cookies from IP addresses, which silently loses the login (every request then gets 401)."""
+    from homeassistant.helpers.aiohttp_client import async_create_clientsession
+    return async_create_clientsession(hass, verify_ssl=False, cookie_jar=aiohttp.CookieJar(unsafe=True))
 
 
 class UniFiError(Exception):
@@ -58,7 +68,10 @@ class UniFiClient:
             async with self._s.post(f"{self._base}/api/auth/login", ssl=False,
                                     json={"username": self._user, "password": self._pw, "rememberMe": True}) as r:
                 if r.status in (400, 401, 403):
-                    raise UniFiAuthError("UniFi rejected the username or password")
+                    # the console's own reason (never contains the password) helps tell a typo from a lockout
+                    body = (await r.text())[:200]
+                    _LOGGER.warning("UniFi login to %s refused: HTTP %s %s", self._base, r.status, body)
+                    raise UniFiAuthError(f"UniFi rejected the login (HTTP {r.status})")
                 if r.status == 429:
                     raise UniFiError("UniFi is rate-limiting logins; try again in a few minutes")
                 if r.status != 200:
@@ -98,6 +111,23 @@ class UniFiClient:
             aps={d["mac"].lower(): d.get("name") or d["mac"] for d in devices if d.get("type") == "uap"},
         )
         return self._cache
+
+    async def sites(self) -> dict[str, str]:
+        """Sites on this console: {site id (e.g. "default"): description}. Most homes have one."""
+        if not self._logged_in:
+            await self.login()
+        headers = {"X-CSRF-Token": self._csrf} if self._csrf else {}
+        try:
+            async with self._s.get(f"{self._base}/proxy/network/api/self/sites", ssl=False, headers=headers) as r:
+                if r.status != 200:
+                    raise UniFiError(f"UniFi returned HTTP {r.status} for the site list")
+                d = await r.json(content_type=None)
+        except aiohttp.ClientError as err:
+            raise UniFiError(f"Can't reach UniFi: {err}") from err
+        return {x["name"]: x.get("desc") or x["name"] for x in d.get("data", [])}
+
+    def use_site(self, site: str) -> None:
+        self._site = site
 
     # ---- provider API -------------------------------------------------------------------------------
     async def kid_groups(self) -> dict[str, list[str]]:

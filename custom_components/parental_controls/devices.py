@@ -46,7 +46,8 @@ class ChildDevices:
     async def async_refresh(self) -> None:
         client = router_client(self.hass)
         if client is None:
-            self.error = "No router connected. Add one: Settings → Devices & services → Parental Controls → Add entry."
+            self.error = ("No router connected. Connect one for the whole household: Settings → Devices & services → "
+                          "Parental Controls → Add hub → Connect a router.")
             self._notify()
             return
         try:

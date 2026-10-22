@@ -19,14 +19,13 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
 from homeassistant.helpers import selector
-from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.util import slugify
 
 from .const import (CONF_BLOCK_ENTITY, CONF_CHILD_NAME, CONF_DEVICES, CONF_HOST, CONF_KIND, CONF_PASSWORD,
-                    CONF_PATTERN, CONF_PICKED, CONF_ROUTER_GROUP, CONF_SITE, CONF_USERNAME, DOMAIN, KIND_CHILD,
-                    KIND_ROUTER)
+                    CONF_PATTERN, CONF_PICKED, CONF_ROUTER_GROUP, CONF_SITE, CONF_USERNAME, CONF_VENDOR, DOMAIN,
+                    KIND_CHILD, KIND_ROUTER, VENDORS)
 from .devices import router_client
-from .unifi import UniFiAuthError, UniFiClient, UniFiError
+from .unifi import UniFiAuthError, UniFiClient, UniFiError, unifi_session
 
 # any on/off entity works as a block switch: a router integration's switch, or an input_boolean for testing
 BLOCK_SELECTOR = selector.EntitySelector(selector.EntitySelectorConfig(domain=["switch", "input_boolean"]))
@@ -70,29 +69,59 @@ class ParentalControlsConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="child", errors=errors, data_schema=vol.Schema(schema))
 
     async def async_step_router(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Pick the router vendor. Only UniFi so far; others plug in behind the same provider interface."""
+        await self.async_set_unique_id("router")
+        self._abort_if_unique_id_configured()
+        if user_input is not None:
+            self._vendor = user_input[CONF_VENDOR]
+            return await self.async_step_unifi()
+        return self.async_show_form(step_id="router", data_schema=vol.Schema({
+            vol.Required(CONF_VENDOR, default="unifi"): selector.SelectSelector(selector.SelectSelectorConfig(
+                options=[selector.SelectOptionDict(value=k, label=v) for k, v in VENDORS.items()],
+                mode=selector.SelectSelectorMode.LIST))}))
+
+    async def async_step_unifi(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         if user_input is not None:
-            await self.async_set_unique_id("router")
-            self._abort_if_unique_id_configured()
-            client = UniFiClient(async_create_clientsession(self.hass, verify_ssl=False), user_input[CONF_HOST],
-                                 user_input[CONF_USERNAME], user_input[CONF_PASSWORD], user_input[CONF_SITE])
+            client = UniFiClient(unifi_session(self.hass), user_input[CONF_HOST],
+                                 user_input[CONF_USERNAME], user_input[CONF_PASSWORD])
             try:
                 await client.login()
-                await client.kid_groups()
+                sites = await client.sites()
             except UniFiAuthError:
                 errors["base"] = "invalid_auth"
             except UniFiError:
                 errors["base"] = "cannot_connect"
             else:
-                return self.async_create_entry(title=f"UniFi ({user_input[CONF_HOST]})",
-                                               data={CONF_KIND: KIND_ROUTER, **user_input})
-        return self.async_show_form(step_id="router", errors=errors, data_schema=vol.Schema({
+                self._login = user_input
+                self._sites = sites
+                if len(sites) <= 1:   # most homes: one site, picked automatically
+                    return await self._async_finish_unifi(next(iter(sites), "default"))
+                return await self.async_step_site()
+        return self.async_show_form(step_id="unifi", errors=errors, data_schema=vol.Schema({
             vol.Required(CONF_HOST): str,
             vol.Required(CONF_USERNAME): str,
             vol.Required(CONF_PASSWORD): selector.TextSelector(
                 selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)),
-            vol.Required(CONF_SITE, default="default"): str,
         }))
+
+    async def async_step_site(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Only shown when the console manages more than one site."""
+        if user_input is not None:
+            return await self._async_finish_unifi(user_input[CONF_SITE])
+        return self.async_show_form(step_id="site", data_schema=vol.Schema({
+            vol.Required(CONF_SITE): selector.SelectSelector(selector.SelectSelectorConfig(
+                options=[selector.SelectOptionDict(value=k, label=v) for k, v in self._sites.items()]))}))
+
+    async def _async_finish_unifi(self, site: str) -> ConfigFlowResult:
+        client = UniFiClient(unifi_session(self.hass), self._login[CONF_HOST],
+                             self._login[CONF_USERNAME], self._login[CONF_PASSWORD], site)
+        try:
+            await client.kid_groups()
+        except UniFiError:
+            return self.async_abort(reason="cannot_connect")
+        return self.async_create_entry(title=f"UniFi ({self._login[CONF_HOST]})",
+                                       data={CONF_KIND: KIND_ROUTER, CONF_VENDOR: "unifi", **self._login, CONF_SITE: site})
 
     @classmethod
     @callback

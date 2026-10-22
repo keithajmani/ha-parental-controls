@@ -33,8 +33,9 @@ Status: Stage 3 (core control, device lists, dashboard card). Installable as a H
 
 ### Device lists (optional, UniFi)
 
-6. Add entry → Parental Controls → **Connect a router**: the console's address and a local UniFi admin with the
-   **View Only** role. Only one router entry is needed for all children.
+6. Add hub (Add entry) → Parental Controls → **Connect a router**, once for the whole household. Pick the router type
+   (UniFi for now), then enter the console's address and a local UniFi admin with the **View Only** role. The UniFi
+   site is picked automatically; you are only asked if the console manages more than one.
 7. On each child: Configure → **Block switch and router group** → pick the child's UniFi group. Its devices now
    appear in the child's **Devices** sensor after **Check devices** (or while **Live devices** is on).
 8. Configure → **Add devices**: search (e.g. `*kobo*`), pick devices, and optionally give each one its own block
@@ -47,7 +48,9 @@ written to Home Assistant's history.
 
 ### The card
 
-The integration serves its own card; there is no dashboard resource to add. Edit a dashboard → Add card → search
+The integration serves its own card and adds it to the dashboard resources automatically (and updates the entry on each
+version). Only if your dashboards are in YAML mode, add `/parental_controls/parental-controls-card.js` as a resource of
+type module yourself. Edit a dashboard → Add card → search
 "Parental Controls", pick the child, or in YAML:
 
 ```yaml

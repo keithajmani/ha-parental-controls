@@ -163,3 +163,16 @@ async def test_card_is_served(hass, hass_client):
     r = await client.get("/parental_controls/parental-controls-card.js")
     assert r.status == 200
     assert "customElements.define(\"parental-controls-card\"" in await r.text()
+
+
+
+async def test_card_is_added_as_a_dashboard_resource_once(hass):
+    assert await async_setup_component(hass, "lovelace", {})
+    await setup_child(hass)
+    res = hass.data["lovelace"].resources
+    urls = [i["url"] for i in res.async_items()]
+    assert any(u.startswith("/parental_controls/parental-controls-card.js?v=") for u in urls)
+    # reloading the integration must not add it twice
+    await hass.config_entries.async_reload(hass.config_entries.async_entries("parental_controls")[0].entry_id)
+    await hass.async_block_till_done()
+    assert sum(u.startswith("/parental_controls/") for u in [i["url"] for i in res.async_items()]) == 1

@@ -18,12 +18,25 @@
         }
       },
       "router": {
+        "title": "Connect a router",
+        "description": "Pick your router. Used only to list devices, their status and speeds; blocking works through Home Assistant switches. More router types can be added later.",
+        "data": {
+          "vendor": "Router"
+        }
+      },
+      "unifi": {
         "title": "Connect a UniFi router",
-        "description": "Used only to list devices, their status and speeds. Use a local UniFi admin with the View Only role. Blocking works through Home Assistant switches and never needs this login.",
+        "description": "Use a local UniFi admin with the View Only role. It is used only to list devices, their status and speeds; blocking works through Home Assistant switches and never needs this login.",
         "data": {
           "host": "Console address (e.g. 192.168.1.1)",
           "username": "Username",
-          "password": "Password",
+          "password": "Password"
+        }
+      },
+      "site": {
+        "title": "Pick the UniFi site",
+        "description": "This console manages more than one UniFi site. Pick the one your home network is in.",
+        "data": {
           "site": "Site"
         }
       }
@@ -34,7 +47,8 @@
       "cannot_connect": "Can't reach the UniFi console."
     },
     "abort": {
-      "already_configured": "This is already set up."
+      "already_configured": "This is already set up.",
+      "cannot_connect": "Can't reach the UniFi console."
     }
   },
   "options": {
