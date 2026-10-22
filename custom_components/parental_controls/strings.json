@@ -1,0 +1,117 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a child",
+        "description": "Pick the switch that blocks this child's devices on your router (for UniFi, the switch for the child's group). On means blocked.",
+        "data": {
+          "child_name": "Child's name",
+          "block_entity": "Block switch"
+        }
+      }
+    },
+    "error": {
+      "switch_in_use": "Another child already uses this switch."
+    },
+    "abort": {
+      "already_configured": "There is already a child with this name."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Block switch",
+        "data": {
+          "block_entity": "Block switch"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "internet": {
+        "name": "Internet",
+        "state": {
+          "online": "Online",
+          "paused": "Paused",
+          "allowed_for": "Allowed for a while",
+          "bedtime": "Bedtime",
+          "blocked": "Blocked"
+        }
+      }
+    },
+    "button": {
+      "block": {
+        "name": "Block"
+      },
+      "allow": {
+        "name": "Allow"
+      },
+      "pause": {
+        "name": "Pause"
+      }
+    },
+    "number": {
+      "pause_minutes": {
+        "name": "Pause length"
+      }
+    },
+    "switch": {
+      "bedtime": {
+        "name": "Bedtime"
+      }
+    },
+    "time": {
+      "bedtime_weeknight_start": {
+        "name": "Bedtime start (Sun-Thu)"
+      },
+      "bedtime_weekend_start": {
+        "name": "Bedtime start (Fri, Sat)"
+      },
+      "bedtime_end": {
+        "name": "Bedtime end"
+      }
+    }
+  },
+  "services": {
+    "block": {
+      "name": "Block",
+      "description": "Block the child's internet until Allow.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Child",
+          "description": "The child to block."
+        }
+      }
+    },
+    "allow": {
+      "name": "Allow",
+      "description": "Turn the child's internet back on now. During bedtime, for the rest of the night.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Child",
+          "description": "The child to allow."
+        }
+      }
+    },
+    "pause": {
+      "name": "Pause",
+      "description": "Pause for a while when online, or allow for a while when blocked or at bedtime.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Child",
+          "description": "The child."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "How long. Leave empty to use the child's pause length."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unknown_child": {
+      "message": "That child isn't set up in Parental Controls."
+    }
+  }
+}

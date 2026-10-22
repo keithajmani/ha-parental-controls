@@ -1,0 +1,119 @@
+<title>Parental Controls Design</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; diagrams full-width in their own scroll boxes; a reference table per layer */
+:root {
+  --bg: #f4f6f8; --panel: #ffffff; --fg: #18212b; --muted: #5a6876; --line: #d8dee5;
+  --accent: #2f6db3; --chip: #e8eef6; --code: #eef2f6;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12171d; --panel: #1a2129; --fg: #e3e9ef; --muted: #9aa7b4; --line: #2c3540;
+  --accent: #7fb0ea; --chip: #22303e; --code: #1f2831; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #12171d; --panel: #1a2129; --fg: #e3e9ef; --muted: #9aa7b4; --line: #2c3540;
+  --accent: #7fb0ea; --chip: #22303e; --code: #1f2831; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15.5px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 32px 56px; }
+main { max-width: 860px; margin: 0 auto; display: grid; gap: 40px; }
+header { display: grid; gap: 8px; }
+.eyebrow { font-size: 12px; letter-spacing: .09em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
+h1 { font-size: 1.85rem; line-height: 1.2; margin: 0; text-wrap: balance; }
+h2 { font-size: 1.25rem; margin: 0; text-wrap: balance; }
+h3 { font-size: 1rem; margin: 0; }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--muted); }
+section { display: grid; gap: 14px; }
+.diagram { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; overflow-x: auto; }
+.diagram pre.mermaid { margin: 0; min-width: 640px; text-align: center; background: transparent; }
+.tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 14px; }
+th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-top: 1px solid var(--line); }
+thead th { border-top: 0; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+td:first-child { font-weight: 600; }
+code { font-family: var(--mono); font-size: .86em; background: var(--code); padding: 1px 5px; border-radius: 5px; overflow-wrap: anywhere; }
+.where { display: inline-block; font-size: 12px; background: var(--chip); color: var(--fg); border-radius: 999px; padding: 1px 9px; margin: 2px 4px 2px 0; white-space: nowrap; }
+ol, ul { margin: 0; padding-left: 1.25em; max-width: 70ch; }
+li + li { margin-top: 6px; }
+.howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.howto div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.howto p { font-size: 14px; color: var(--muted); }
+.tag { font-size: 12px; color: var(--muted); }
+</style>
+<main>
+<header><span class="eyebrow">ha-parental-controls · Stage 0 · commit 381bb02</span><h1>Parental Controls for Home Assistant — design</h1></header>
+<p>Status: Stage 0 (spec and rules engine). Nothing here runs in Home Assistant yet.</p>
+<section><h2>Goal</h2>
+<p>Give parents a simple screen per child to block, pause and schedule a child's internet on their home router,</p>
+<p>installable from HACS and set up entirely from Home Assistant's UI. It replaces a hand-built setup (6 scripts,</p>
+<p>4 automations, about 30 helpers, template sensors, a command-line sensor, a pasted Python file and a generated</p>
+<p>dashboard) with one integration and one card.</p>
+<p>In scope: per-child control on a router (block, pause, allow-for, bedtime), per-device control and device status.</p>
+<p>Out of scope: DNS filtering such as NextDNS (a separate integration later).</p>
+</section><section><h2>Concepts</h2>
+<div class="tablewrap"><table><thead><tr><th>Term</th><th>Meaning</th></tr></thead><tbody><tr><td>Child</td><td>A person with one router group, e.g. "Riley". Any number of children.</td></tr><tr><td>Router group</td><td>The router's own list of the child's devices. Blocking a child blocks the group. Kept in the router.</td></tr><tr><td>Manual block</td><td>The parent's standing choice: blocked until Allow.</td></tr><tr><td>Pause</td><td>Blocked for N minutes, then back to whatever applies.</td></tr><tr><td>Allow-for</td><td>Online for N minutes, then back to whatever applies. What Pause becomes while a child is blocked.</td></tr><tr><td>Bedtime</td><td>A nightly window per child (weeknight start, weekend start for Fri and Sat nights, one end time).</td></tr><tr><td>Allowed tonight</td><td>Set by Allow during bedtime: online for the rest of that night only.</td></tr><tr><td>Group device</td><td>A device in a child's router group. It follows the child's block.</td></tr><tr><td>Extra device</td><td>A device outside the group, shown on the child's screen (e.g. Kobo, Xbox, Echo Show).</td></tr><tr><td>Device control</td><td>An optional per-device block, on either kind of device.</td></tr></tbody></table></div>
+</section><section><h2>Rules</h2>
+<p>Whether a child is blocked right now is derived from stored intent, in this order:</p>
+<p>1. A running override wins: Pause blocks, Allow-for allows.</p>
+<p>2. Otherwise bedtime blocks, unless the child is allowed tonight.</p>
+<p>3. Otherwise the manual setting.</p>
+<div class="diagram"><pre class="mermaid">
+stateDiagram-v2
+    [*] --> Online
+    Online --> Blocked: Block
+    Blocked --> Online: Allow
+    Online --> Paused: Pause N
+    Paused --> Online: timer ends / Allow
+    Paused --> Blocked: Block
+    Blocked --> AllowedFor: Pause N (allow-for)
+    AllowedFor --> Blocked: timer ends / Block
+    AllowedFor --> Online: Allow
+    Online --> Bedtime: bedtime starts
+    Bedtime --> AllowedFor: Pause N (allow-for)
+    AllowedFor --> Bedtime: timer ends (still bedtime)
+    Bedtime --> Online: Allow (allowed tonight) / bedtime ends
+    Bedtime --> Blocked: Block (manual, survives 2 AM)
+</pre></div>
+<div class="tablewrap"><table><thead><tr><th>Event</th><th>What happens</th></tr></thead><tbody><tr><td>Pause while online</td><td>Paused for N minutes, then online.</td></tr><tr><td>Pause while blocked or in bedtime</td><td>Allow-for N minutes, then blocked again (or bedtime, if still bedtime).</td></tr><tr><td>Pause while a pause or allow-for runs</td><td>Restarts it with the new length.</td></tr><tr><td>Block</td><td>Manual block. Cancels any pause or allow-for. Survives the end of bedtime.</td></tr><tr><td>Allow</td><td>Clears the manual block and any pause or allow-for. During bedtime: allowed tonight.</td></tr><tr><td>Bedtime starts</td><td>Cancels any pause or allow-for; resets "allowed tonight". A manual block stays underneath.</td></tr><tr><td>Bedtime ends</td><td>Lifts only bedtime's block; resets "allowed tonight". A manual block stays.</td></tr><tr><td>Router changed outside HA</td><td>Unblocked counts as Allow (cancels a running pause); blocked counts as Block.</td></tr><tr><td>Home Assistant restarts</td><td>State is saved with absolute end times; on start-up, anything that ended while down is applied.</td></tr></tbody></table></div>
+<p>These are the cases in <code>tests/test_engine.py</code>, taken from the behaviour of the current setup.</p>
+</section><section><h2>Devices (optional, router-specific)</h2>
+<ul>
+<li>The setup can search the router's known clients with a wildcard on name, hostname or MAC (e.g. <code>*kobo*</code>),</li>
+</ul>
+<p>  online or not, and shows each match's name, MAC, last seen and current group.</p>
+<ul>
+<li>For each picked device the parent chooses the child and whether it gets its own block control.</li>
+<li>Two kinds, both kept:</li>
+<li><b>Extra device</b> (outside the group): listed on the child's screen; only its own control can block it.</li>
+<li><b>Group device with its own control</b>: block just that one device while the rest of the group stays online.</li>
+<li>Precedence: the child's block always wins for group devices. A device control only adds a restriction; it</li>
+</ul>
+<p>  cannot let a device through its child's block.</p>
+<ul>
+<li>Device status (online, access point, signal, speeds) is fetched only when the parent opens the Devices view</li>
+</ul>
+<p>  or turns on Live, never continuously, and is not written to Home Assistant's history.</p>
+</section><section><h2>Router providers</h2>
+<p>The rules know nothing about any router. A provider (<code>provider.py</code>) supplies:</p>
+<ul>
+<li>search clients, list groups, live status and speeds for chosen devices;</li>
+<li>block or allow a child's group; block or allow one device;</li>
+<li>read the current block state, so changes made in the router's own app are noticed.</li>
+</ul>
+<p>UniFi is the first provider. Per-device blocks on UniFi need a per-device rule on the router. Stage 1 uses rules</p>
+<p>the parent creates in UniFi and picks from a list (read-only access). Creating those rules from Home Assistant</p>
+<p>needs a UniFi login with write access and is planned for later, behind the same interface.</p>
+</section><section><h2>What Home Assistant will show (Stage 1 onwards)</h2>
+<p>Per child:</p>
+<div class="tablewrap"><table><thead><tr><th>Entity</th><th>Purpose</th></tr></thead><tbody><tr><td><code>sensor.&lt;child&gt;_internet</code></td><td>Online / Paused / Allowed for / Bedtime / Blocked, with <code>ends_at</code> and <code>then</code> attributes</td></tr><tr><td><code>button.&lt;child&gt;_block</code>, <code>button.&lt;child&gt;_allow</code></td><td>The two status-card actions</td></tr><tr><td><code>number.&lt;child&gt;_pause_minutes</code></td><td>The Custom slider</td></tr><tr><td><code>switch.&lt;child&gt;_bedtime</code> and three <code>time</code> entities</td><td>Bedtime on/off and its times</td></tr><tr><td><code>switch.&lt;device&gt;_blocked</code></td><td>One per device control</td></tr></tbody></table></div>
+<p>Services: <code>parental_controls.block</code>, <code>.allow</code>, <code>.pause</code> (child, minutes), <code>.refresh_devices</code> (child, live).</p>
+<p>One card, <code>custom:parental-controls-card</code> with <code>child: riley</code>, draws the status card with its Block/Allow button,</p>
+<p>the Pause section and the Devices list. Adding a child in the integration adds its entities; adding a tab is one</p>
+<p>card on a new view.</p>
+</section><section><h2>Stages</h2>
+<div class="tablewrap"><table><thead><tr><th>Stage</th><th>Delivers</th><th>Replaces</th></tr></thead><tbody><tr><td>0</td><td>This spec, the rules engine and its tests</td><td>nothing yet</td></tr><tr><td>1</td><td>Integration with children, block/pause/allow, bedtime, restart handling</td><td>scripts, automations, helpers, template sensors</td></tr><tr><td>2</td><td>Devices: search and pick in the UI, live status, device controls</td><td>command-line sensor, pasted Python file</td></tr><tr><td>3</td><td>The card with a visual editor</td><td>button-card/Mushroom templates, dashboard generator</td></tr><tr><td>4</td><td>HACS packaging, CI, docs, translations, GitHub</td><td></td></tr></tbody></table></div>
+<p>Each stage runs alongside the current setup and moves one child at a time, with the old pieces kept until the new</p>
+<p>ones have run cleanly.</p></section>
+</main>

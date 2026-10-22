@@ -1,0 +1,28 @@
+block:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: parental_controls
+allow:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: parental_controls
+pause:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: parental_controls
+    minutes:
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 240
+          unit_of_measurement: min

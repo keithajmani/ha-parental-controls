@@ -1,0 +1,75 @@
+"""Parental Controls: block, pause and schedule a child's internet on the home router.
+
+One config entry per child. Each child is a device with a status sensor, Block / Allow / Pause buttons,
+a pause-length number, and bedtime settings. The rules live in engine.py; controller.py connects them to
+the router's block switch.
+"""
+from __future__ import annotations
+
+import voluptuous as vol
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.typing import ConfigType
+
+from .const import CONF_BLOCK_ENTITY, CONF_CHILD_NAME, DOMAIN, MAX_PAUSE_MINUTES, MIN_PAUSE_MINUTES
+from .controller import ChildController
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+PLATFORMS = [Platform.SENSOR, Platform.BUTTON, Platform.NUMBER, Platform.SWITCH, Platform.TIME]
+
+ParentalControlsConfigEntry = ConfigEntry[ChildController]
+
+ATTR_CHILD = "config_entry_id"
+ATTR_MINUTES = "minutes"
+CHILD_SCHEMA = vol.Schema({vol.Required(ATTR_CHILD): cv.string})
+PAUSE_SCHEMA = CHILD_SCHEMA.extend(
+    {vol.Optional(ATTR_MINUTES): vol.All(vol.Coerce(int), vol.Range(min=MIN_PAUSE_MINUTES, max=MAX_PAUSE_MINUTES))})
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the services once: parental_controls.block / allow / pause."""
+
+    def child(call: ServiceCall) -> ChildController:
+        entry = hass.config_entries.async_get_entry(call.data[ATTR_CHILD])
+        if entry is None or entry.domain != DOMAIN or not hasattr(entry, "runtime_data"):
+            raise ServiceValidationError(translation_domain=DOMAIN, translation_key="unknown_child")
+        return entry.runtime_data
+
+    async def block(call: ServiceCall) -> None:
+        await child(call).async_block()
+
+    async def allow(call: ServiceCall) -> None:
+        await child(call).async_allow()
+
+    async def pause(call: ServiceCall) -> None:
+        await child(call).async_pause(call.data.get(ATTR_MINUTES))
+
+    hass.services.async_register(DOMAIN, "block", block, schema=CHILD_SCHEMA)
+    hass.services.async_register(DOMAIN, "allow", allow, schema=CHILD_SCHEMA)
+    hass.services.async_register(DOMAIN, "pause", pause, schema=PAUSE_SCHEMA)
+    return True
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ParentalControlsConfigEntry) -> bool:
+    ctl = ChildController(hass, entry.entry_id, entry.data[CONF_CHILD_NAME],
+                          entry.options.get(CONF_BLOCK_ENTITY, entry.data[CONF_BLOCK_ENTITY]))
+    await ctl.async_start()
+    entry.runtime_data = ctl
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(entry.add_update_listener(_async_reload))
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ParentalControlsConfigEntry) -> bool:
+    ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if ok:
+        await entry.runtime_data.async_stop()
+    return ok
+
+
+async def _async_reload(hass: HomeAssistant, entry: ParentalControlsConfigEntry) -> None:
+    await hass.config_entries.async_reload(entry.entry_id)
