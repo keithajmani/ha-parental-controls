@@ -31,6 +31,12 @@ async def setup_child(hass: HomeAssistant, name="Sam", switch=SW) -> MockConfigE
     return entry
 
 
+async def start_child_flow(hass):
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    assert r["type"] == "menu"
+    return await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "child"})
+
+
 async def call(hass, service, entry, **data):
     await hass.services.async_call(DOMAIN, service, {"config_entry_id": entry.entry_id, **data}, blocking=True)
     await hass.async_block_till_done()
@@ -112,13 +118,13 @@ async def test_two_children_are_independent(hass):
 
 async def test_config_flow_creates_a_child_and_rejects_duplicates(hass):
     assert await async_setup_component(hass, "input_boolean", {"input_boolean": {"x": {}, "y": {}}})
-    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    r = await start_child_flow(hass)
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"child_name": "Jordan", "block_entity": "input_boolean.x"})
     assert r["type"] == "create_entry" and r["title"] == "Jordan"
-    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    r = await start_child_flow(hass)
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"child_name": "Jordan", "block_entity": "input_boolean.y"})
     assert r["type"] == "abort" and r["reason"] == "already_configured"
-    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    r = await start_child_flow(hass)
     r = await hass.config_entries.flow.async_configure(r["flow_id"], {"child_name": "Zoe", "block_entity": "input_boolean.x"})
     assert r["type"] == "form" and r["errors"] == {"block_entity": "switch_in_use"}
 
@@ -141,3 +147,11 @@ async def test_bedtime_blocks_at_its_start_and_allow_lasts_the_night(hass, freez
     freezer.tick(timedelta(minutes=10)); async_fire_time_changed(hass); await hass.async_block_till_done()
     assert hass.states.get(SENSOR).state == "online"
     assert hass.states.get(SENSOR).attributes["allowed_tonight"] is True
+
+
+async def test_new_child_adopts_a_blocked_switch(hass):
+    assert await async_setup_component(hass, "input_boolean", {"input_boolean": {"sam_block": {"initial": True}}})
+    assert hass.states.get(SW).state == "on"
+    await setup_child(hass)
+    assert hass.states.get(SW).state == "on"           # not unblocked by adding the child
+    assert hass.states.get(SENSOR).state == "blocked"

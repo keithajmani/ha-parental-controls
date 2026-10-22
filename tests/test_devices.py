@@ -1,0 +1,168 @@
+"""Stage 2: router connection, device search and pick, the Devices list, Live, and per-device blocks.
+The UniFi console is simulated with Home Assistant's aiohttp test mocker."""
+import pytest
+from homeassistant.setup import async_setup_component
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+DOMAIN = "parental_controls"
+HOST = "10.0.0.1"
+U = f"https://{HOST}"
+NET = f"{U}/proxy/network"
+GROUPS = [{"name": "Sam", "members": ["aa:aa:aa:aa:aa:01", "aa:aa:aa:aa:aa:02"]}, {"name": "Riley", "members": []}]
+USERS = [
+    {"mac": "aa:aa:aa:aa:aa:01", "name": "Sam's iPad", "last_seen": 1790000000},
+    {"mac": "aa:aa:aa:aa:aa:02", "name": "Sam's laptop", "last_seen": 1790000000},
+    {"mac": "bb:bb:bb:bb:bb:01", "hostname": "kobo", "last_seen": 1789000000},
+    {"mac": "cc:cc:cc:cc:cc:01", "name": "Kitchen speaker", "last_seen": 1790000000},
+]
+STA = [{"mac": "aa:aa:aa:aa:aa:01", "name": "Sam's iPad", "essid": "home", "ap_mac": "dd:dd:dd:dd:dd:01",
+        "signal": -60, "tx_bytes": 1000, "rx_bytes": 500, "tx_bytes-r": 125000, "rx_bytes-r": 1250}]
+DEVICES = [{"mac": "dd:dd:dd:dd:dd:01", "type": "uap", "name": "Hall AP"}]
+
+
+@pytest.fixture(autouse=True)
+def auto_enable_custom_integrations(enable_custom_integrations):
+    yield
+
+
+@pytest.fixture
+def unifi(aioclient_mock):
+    aioclient_mock.post(f"{U}/api/auth/login", json={}, headers={"X-CSRF-Token": "t"})
+    aioclient_mock.get(f"{NET}/v2/api/site/default/network-members-groups", json=GROUPS)
+    aioclient_mock.get(f"{NET}/api/s/default/rest/user", json={"data": USERS})
+    aioclient_mock.get(f"{NET}/api/s/default/stat/device", json={"data": DEVICES})
+    aioclient_mock.get(f"{NET}/api/s/default/stat/sta", json={"data": STA})
+    return aioclient_mock
+
+
+async def add_router(hass):
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "router"})
+    r = await hass.config_entries.flow.async_configure(
+        r["flow_id"], {"host": HOST, "username": "ro", "password": "pw", "site": "default"})
+    assert r["type"] == "create_entry", r
+    await hass.async_block_till_done()
+    return r["result"]
+
+
+async def add_child(hass, group="Sam"):
+    assert await async_setup_component(hass, "input_boolean", {"input_boolean": {
+        "sam_block": {}, "speaker_block": {}}})
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "child"})
+    r = await hass.config_entries.flow.async_configure(
+        r["flow_id"], {"child_name": "Sam", "block_entity": "input_boolean.sam_block", "router_group": group})
+    assert r["type"] == "create_entry", r
+    await hass.async_block_till_done()
+    return r["result"]
+
+
+async def check(hass):
+    await hass.services.async_call("button", "press", {"entity_id": "button.sam_parental_controls_check_devices"},
+                                   blocking=True)
+    await hass.async_block_till_done()
+    return hass.states.get("sensor.sam_parental_controls_devices")
+
+
+async def test_router_flow_rejects_a_bad_login(hass, aioclient_mock):
+    aioclient_mock.post(f"{U}/api/auth/login", status=401)
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "router"})
+    r = await hass.config_entries.flow.async_configure(
+        r["flow_id"], {"host": HOST, "username": "ro", "password": "bad", "site": "default"})
+    assert r["type"] == "form" and r["errors"] == {"base": "invalid_auth"}
+
+
+async def test_group_members_are_listed_with_status_and_speed(hass, unifi):
+    await add_router(hass)
+    await add_child(hass)
+    st = await check(hass)
+    rows = {r["mac"]: r for r in st.attributes["devices"]}
+    assert st.state == "1"                                  # one of the two group devices is online
+    ipad = rows["aa:aa:aa:aa:aa:01"]
+    assert ipad["online"] and ipad["in_group"] and ipad["ap"] == "Hall AP" and ipad["kind"] == "tablet"
+    assert ipad["down_bps"] == 1_000_000 and ipad["up_bps"] == 10_000   # first sample: the router's own rate
+    assert rows["aa:aa:aa:aa:aa:02"]["online"] is False
+
+
+async def test_devices_follow_the_childs_block(hass, unifi):
+    await add_router(hass)
+    entry = await add_child(hass)
+    await hass.services.async_call(DOMAIN, "block", {"config_entry_id": entry.entry_id}, blocking=True)
+    st = await check(hass)
+    assert all(r["blocked"] for r in st.attributes["devices"] if r["in_group"])
+
+
+async def test_search_pick_and_block_a_device_outside_the_group(hass, unifi):
+    await add_router(hass)
+    entry = await add_child(hass)
+    r = await hass.config_entries.options.async_init(entry.entry_id)
+    assert r["type"] == "menu"
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"next_step_id": "add_devices"})
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"pattern": "speaker"})
+    assert r["step_id"] == "pick"
+    labels = {o["value"]: o["label"] for o in r["data_schema"].schema["picked"].config["options"]}
+    assert list(labels) == ["cc:cc:cc:cc:cc:01"] and "no group" in labels["cc:cc:cc:cc:cc:01"]
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"picked": ["cc:cc:cc:cc:cc:01"]})
+    assert r["step_id"] == "block"
+    r = await hass.config_entries.options.async_configure(
+        r["flow_id"], {"cc:cc:cc:cc:cc:01": "input_boolean.speaker_block"})
+    assert r["type"] == "create_entry"
+    await hass.async_block_till_done()   # options change reloads the entry
+    sw = "switch.sam_parental_controls_kitchen_speaker_blocked"
+    assert hass.states.get(sw).state == "off"
+    await hass.services.async_call("switch", "turn_on", {"entity_id": sw}, blocking=True)
+    await hass.async_block_till_done()
+    assert hass.states.get("input_boolean.speaker_block").state == "on"
+    st = await check(hass)
+    speaker = next(r for r in st.attributes["devices"] if r["mac"] == "cc:cc:cc:cc:cc:01")
+    assert speaker["blocked"] and not speaker["in_group"]
+    assert hass.states.get("input_boolean.sam_block").state == "off"   # the child is still online
+
+
+async def test_a_group_member_can_get_its_own_block(hass, unifi):
+    await add_router(hass)
+    entry = await add_child(hass)
+    r = await hass.config_entries.options.async_init(entry.entry_id)
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"next_step_id": "add_devices"})
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"pattern": "*ipad*"})
+    labels = {o["value"]: o["label"] for o in r["data_schema"].schema["picked"].config["options"]}
+    assert "in this child's group" in labels["aa:aa:aa:aa:aa:01"]
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"picked": ["aa:aa:aa:aa:aa:01"]})
+    r = await hass.config_entries.options.async_configure(
+        r["flow_id"], {"aa:aa:aa:aa:aa:01": "input_boolean.speaker_block"})
+    await hass.async_block_till_done()
+    st = await check(hass)
+    ipad = next(r for r in st.attributes["devices"] if r["mac"] == "aa:aa:aa:aa:aa:01")
+    assert ipad["in_group"] and ipad["block_entity"] == "input_boolean.speaker_block" and ipad["blocked"] is False
+
+
+async def test_without_a_router_the_devices_list_says_so(hass):
+    assert await async_setup_component(hass, "input_boolean", {"input_boolean": {"sam_block": {}}})
+    entry = MockConfigEntry(domain=DOMAIN, title="Sam", unique_id="sam",
+                            data={"kind": "child", "child_name": "Sam", "block_entity": "input_boolean.sam_block"})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    st = await check(hass)
+    assert "No router connected" in st.attributes["error"]
+    assert st.state == "unknown"
+
+
+async def test_live_turns_on_and_off(hass, unifi):
+    await add_router(hass)
+    await add_child(hass)
+    sw = "switch.sam_parental_controls_live_devices"
+    await hass.services.async_call("switch", "turn_on", {"entity_id": sw}, blocking=True)
+    await hass.async_block_till_done()
+    assert hass.states.get(sw).state == "on"
+    assert hass.states.get("sensor.sam_parental_controls_devices").state == "1"
+    await hass.services.async_call("switch", "turn_off", {"entity_id": sw}, blocking=True)
+    await hass.async_block_till_done()
+    assert hass.states.get(sw).state == "off"
+
+
+async def test_device_list_is_not_recorded(hass, unifi):
+    await add_router(hass)
+    await add_child(hass)
+    from custom_components.parental_controls.sensor import DevicesSensor
+    assert "devices" in DevicesSensor._unrecorded_attributes

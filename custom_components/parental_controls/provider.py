@@ -21,6 +21,7 @@ class Client:
     signal: Optional[int] = None
     down_bps: Optional[int] = None
     up_bps: Optional[int] = None
+    ssid: Optional[str] = None
 
 
 class RouterProvider(Protocol):

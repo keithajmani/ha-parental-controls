@@ -15,8 +15,15 @@ from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
-from .const import CONF_BLOCK_ENTITY, CONF_CHILD_NAME, DOMAIN, MAX_PAUSE_MINUTES, MIN_PAUSE_MINUTES
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
+
+from .const import (CONF_BLOCK_ENTITY, CONF_CHILD_NAME, CONF_DEVICES, CONF_HOST, CONF_KIND, CONF_PASSWORD,
+                    CONF_ROUTER_GROUP, CONF_SITE, CONF_USERNAME, DOMAIN, KIND_ROUTER, MAX_PAUSE_MINUTES,
+                    MIN_PAUSE_MINUTES)
 from .controller import ChildController
+from .devices import ChildDevices
+from .unifi import UniFiAuthError, UniFiClient, UniFiError
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 PLATFORMS = [Platform.SENSOR, Platform.BUTTON, Platform.NUMBER, Platform.SWITCH, Platform.TIME]
@@ -35,7 +42,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     def child(call: ServiceCall) -> ChildController:
         entry = hass.config_entries.async_get_entry(call.data[ATTR_CHILD])
-        if entry is None or entry.domain != DOMAIN or not hasattr(entry, "runtime_data"):
+        if (entry is None or entry.domain != DOMAIN or entry.data.get(CONF_KIND) == KIND_ROUTER
+                or not hasattr(entry, "runtime_data")):
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key="unknown_child")
         return entry.runtime_data
 
@@ -51,12 +59,30 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.services.async_register(DOMAIN, "block", block, schema=CHILD_SCHEMA)
     hass.services.async_register(DOMAIN, "allow", allow, schema=CHILD_SCHEMA)
     hass.services.async_register(DOMAIN, "pause", pause, schema=PAUSE_SCHEMA)
+
+    async def refresh_devices(call: ServiceCall) -> None:
+        await child(call).devices.async_refresh()
+
+    hass.services.async_register(DOMAIN, "refresh_devices", refresh_devices, schema=CHILD_SCHEMA)
     return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ParentalControlsConfigEntry) -> bool:
-    ctl = ChildController(hass, entry.entry_id, entry.data[CONF_CHILD_NAME],
-                          entry.options.get(CONF_BLOCK_ENTITY, entry.data[CONF_BLOCK_ENTITY]))
+    if entry.data.get(CONF_KIND) == KIND_ROUTER:
+        # the router entry only holds the (view-only) login; children use it for their Devices list
+        client = UniFiClient(async_create_clientsession(hass, verify_ssl=False), entry.data[CONF_HOST],
+                             entry.data[CONF_USERNAME], entry.data[CONF_PASSWORD], entry.data.get(CONF_SITE, "default"))
+        try:
+            await client.login()
+        except UniFiAuthError as err:
+            raise ConfigEntryAuthFailed(str(err)) from err
+        except UniFiError as err:
+            raise ConfigEntryNotReady(str(err)) from err
+        entry.runtime_data = client
+        return True
+    opts = {**entry.data, **entry.options}
+    ctl = ChildController(hass, entry.entry_id, entry.data[CONF_CHILD_NAME], opts[CONF_BLOCK_ENTITY])
+    ctl.devices = ChildDevices(hass, opts.get(CONF_ROUTER_GROUP), opts.get(CONF_DEVICES, {}), ctl.notify)
     await ctl.async_start()
     entry.runtime_data = ctl
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -65,8 +91,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ParentalControlsConfigEn
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ParentalControlsConfigEntry) -> bool:
+    if entry.data.get(CONF_KIND) == KIND_ROUTER:
+        return True
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:
+        await entry.runtime_data.devices.async_stop()
         await entry.runtime_data.async_stop()
     return ok
 

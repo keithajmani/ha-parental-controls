@@ -1,6 +1,6 @@
 # Installing Parental Controls
 
-Status: Stage 1 (core control) can be installed by hand for testing. HACS install comes in Stage 4.
+Status: Stage 2 (core control + device lists). Installable as a HACS custom repository. Dashboard card comes in Stage 3.
 
 ## Requirements
 
@@ -31,7 +31,21 @@ Status: Stage 1 (core control) can be installed by hand for testing. HACS instal
    pause length, bedtime switch and bedtime times. The card comes in Stage 3; until then use the entities or the
    `parental_controls.block`, `.allow` and `.pause` actions.
 
-To remove: delete the integration entry, then the folder, then restart.
+### Device lists (optional, UniFi)
+
+6. Add entry → Parental Controls → **Connect a router**: the console's address and a local UniFi admin with the
+   **View Only** role. Only one router entry is needed for all children.
+7. On each child: Configure → **Block switch and router group** → pick the child's UniFi group. Its devices now
+   appear in the child's **Devices** sensor after **Check devices** (or while **Live devices** is on).
+8. Configure → **Add devices**: search (e.g. `*kobo*`), pick devices, and optionally give each one its own block
+   switch. A device outside the child's group is listed on the child's screen; a device inside it can be blocked
+   on its own while the rest of the group stays online. Each device with a block switch gets a
+   "<device> blocked" switch on the child.
+
+Device status is fetched only when asked (Check devices, or Live for up to 5 minutes) and the device list is not
+written to Home Assistant's history.
+
+To remove: delete the integration entries, then the folder, then restart.
 
 ## Steps once it's in HACS (planned)
 

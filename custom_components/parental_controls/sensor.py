@@ -11,7 +11,7 @@ from .entity import ChildEntity
 
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddEntitiesCallback) -> None:
-    async_add_entities([InternetSensor(entry.runtime_data)])
+    async_add_entities([InternetSensor(entry.runtime_data), DevicesSensor(entry.runtime_data)])
 
 
 class InternetSensor(ChildEntity, SensorEntity):
@@ -47,3 +47,27 @@ class InternetSensor(ChildEntity, SensorEntity):
             "bedtime_enabled": b.enabled,
             "block_entity": self.ctl.block_entity,
         }
+
+
+class DevicesSensor(ChildEntity, SensorEntity):
+    """Number of the child's devices online at the last check. The device list is an attribute that is kept
+    out of the recorder (it changes every few seconds while Live is on)."""
+    _attr_icon = "mdi:devices"
+    _attr_native_unit_of_measurement = "online"
+    _unrecorded_attributes = frozenset({"devices", "checked", "error", "live"})
+
+    def __init__(self, ctl) -> None:
+        super().__init__(ctl, "devices")
+
+    @property
+    def native_value(self) -> int | None:
+        d = self.ctl.devices
+        return sum(1 for r in d.rows if r["online"]) if d.checked else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        d = self.ctl.devices
+        rows = [{**r, "blocked": d.blocked(r) if r["block_entity"] else (r["in_group"] and self.ctl.status().router_blocked)}
+                for r in d.rows]
+        return {"devices": rows, "checked": d.checked.isoformat() if d.checked else None, "error": d.error,
+                "live": d.live}

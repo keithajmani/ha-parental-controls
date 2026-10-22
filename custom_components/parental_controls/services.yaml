@@ -26,3 +26,10 @@ pause:
           min: 1
           max: 240
           unit_of_measurement: min
+refresh_devices:
+  fields:
+    config_entry_id:
+      required: true
+      selector:
+        config_entry:
+          integration: parental_controls

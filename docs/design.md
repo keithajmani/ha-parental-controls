@@ -1,6 +1,6 @@
 # Parental Controls for Home Assistant — design
 
-Status: Stage 0 (spec and rules engine). Nothing here runs in Home Assistant yet.
+Status: Stage 2 built (core control and device lists). Stage 3 (card) next.
 
 ## Goal
 
@@ -102,9 +102,13 @@ Per child:
 | `button.<child>_block`, `button.<child>_allow` | The two status-card actions |
 | `number.<child>_pause_minutes` | The Custom slider |
 | `switch.<child>_bedtime` and three `time` entities | Bedtime on/off and its times |
-| `switch.<device>_blocked` | One per device control |
+| `sensor.<child>_devices` | Devices online at the last check; the list (status, AP, signal, speeds, block state) is an unrecorded attribute |
+| `button.<child>_check_devices`, `switch.<child>_live_devices` | Fetch now; refresh every 5 s, off by itself after 5 min |
+| `switch.<child>_<device>_blocked` | One per device that has its own block switch; mirrors that switch |
 
-Services: `parental_controls.block`, `.allow`, `.pause` (child, minutes), `.refresh_devices` (child, live).
+Services: `parental_controls.block`, `.allow`, `.pause` (child, minutes), `.refresh_devices` (child).
+
+Entries: one "router" entry holds the UniFi console address and a view-only login; each child is its own entry. A child's options hold its block switch, router group and picked devices (`{mac: {name, block_entity}}`).
 
 One card, `custom:parental-controls-card` with `child: riley`, draws the status card with its Block/Allow button,
 the Pause section and the Devices list. Adding a child in the integration adds its entities; adding a tab is one

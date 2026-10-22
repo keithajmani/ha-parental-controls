@@ -2,29 +2,89 @@
   "config": {
     "step": {
       "user": {
+        "title": "Parental Controls",
+        "menu_options": {
+          "child": "Add a child",
+          "router": "Connect a router (for device lists)"
+        }
+      },
+      "child": {
         "title": "Add a child",
-        "description": "Pick the switch that blocks this child's devices on your router (for UniFi, the switch for the child's group). On means blocked.",
+        "description": "Pick the switch that blocks this child's devices on your router (for UniFi, the switch for the child's group). On means blocked. If a router is connected, also pick the child's group so their devices can be listed.",
         "data": {
           "child_name": "Child's name",
-          "block_entity": "Block switch"
+          "block_entity": "Block switch",
+          "router_group": "Router group (optional)"
+        }
+      },
+      "router": {
+        "title": "Connect a UniFi router",
+        "description": "Used only to list devices, their status and speeds. Use a local UniFi admin with the View Only role. Blocking works through Home Assistant switches and never needs this login.",
+        "data": {
+          "host": "Console address (e.g. 192.168.1.1)",
+          "username": "Username",
+          "password": "Password",
+          "site": "Site"
         }
       }
     },
     "error": {
-      "switch_in_use": "Another child already uses this switch."
+      "switch_in_use": "Another child already uses this switch.",
+      "invalid_auth": "UniFi rejected the username or password.",
+      "cannot_connect": "Can't reach the UniFi console."
     },
     "abort": {
-      "already_configured": "There is already a child with this name."
+      "already_configured": "This is already set up."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Block switch",
+        "title": "Child options",
+        "menu_options": {
+          "settings": "Block switch and router group",
+          "add_devices": "Add devices",
+          "remove_devices": "Remove devices"
+        }
+      },
+      "settings": {
+        "title": "Block switch and router group",
         "data": {
-          "block_entity": "Block switch"
+          "block_entity": "Block switch",
+          "router_group": "Router group"
+        }
+      },
+      "add_devices": {
+        "title": "Find devices",
+        "description": "Search the router's known devices by name, hostname or MAC. Wildcards work, e.g. *kobo*; plain text matches anywhere.",
+        "data": {
+          "pattern": "Search"
+        }
+      },
+      "pick": {
+        "title": "Pick devices",
+        "description": "Pick the devices to show on this child's screen. A device outside the child's group is listed with its status; a device inside the group can be blocked on its own in the next step.",
+        "data": {
+          "picked": "Devices"
+        }
+      },
+      "block": {
+        "title": "Per-device block (optional)",
+        "description": "For each device you can pick a switch that blocks just that device ({devices}). Leave it empty to only list the device."
+      },
+      "remove_devices": {
+        "title": "Remove devices",
+        "data": {
+          "picked": "Devices to remove"
         }
       }
+    },
+    "error": {
+      "no_match": "No devices match that search.",
+      "cannot_connect": "Can't reach the UniFi console."
+    },
+    "abort": {
+      "no_router": "Connect a router first: Add entry \u2192 Connect a router."
     }
   },
   "entity": {
@@ -38,6 +98,9 @@
           "bedtime": "Bedtime",
           "blocked": "Blocked"
         }
+      },
+      "devices": {
+        "name": "Devices"
       }
     },
     "button": {
@@ -49,6 +112,9 @@
       },
       "pause": {
         "name": "Pause"
+      },
+      "check_devices": {
+        "name": "Check devices"
       }
     },
     "number": {
@@ -59,6 +125,12 @@
     "switch": {
       "bedtime": {
         "name": "Bedtime"
+      },
+      "devices_live": {
+        "name": "Live devices"
+      },
+      "device_blocked": {
+        "name": "{device} blocked"
       }
     },
     "time": {
@@ -105,6 +177,16 @@
         "minutes": {
           "name": "Minutes",
           "description": "How long. Leave empty to use the child's pause length."
+        }
+      }
+    },
+    "refresh_devices": {
+      "name": "Check devices",
+      "description": "Fetch the child's devices, their status and speeds from the router now.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Child",
+          "description": "The child."
         }
       }
     }

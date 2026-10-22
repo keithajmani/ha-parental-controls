@@ -41,7 +41,8 @@ class ChildController:
         self._unsubs: list[CALLBACK_TYPE] = []
         self._override_timer: CALLBACK_TYPE | None = None
         self._own_contexts: set[str] = set()
-        self._last: tuple | None = None   # (status, saved state) after the last update, to spot changes on a tick
+        self._last: tuple | None = None
+        self.devices = None   # ChildDevices, set by __init__   # (status, saved state) after the last update, to spot changes on a tick
 
     # ---- lifecycle ----------------------------------------------------------------------------------
     async def async_start(self) -> None:
@@ -49,6 +50,12 @@ class ChildController:
         if data:
             self.kid = Kid.from_dict({**data["kid"], "name": self.name})
             self.pause_minutes = data.get("pause_minutes", DEFAULT_PAUSE_MINUTES)
+        else:
+            # First start for this child: adopt the switch's current state, so adding a child who is blocked
+            # right now doesn't unblock them.
+            st = self.hass.states.get(self.block_entity)
+            if st is not None and st.state == STATE_ON:
+                self.kid.manual_blocked = True
         self._unsubs.append(async_track_state_change_event(self.hass, [self.block_entity], self._on_switch_change))
         self._unsubs.append(async_track_time_interval(self.hass, self._on_tick, timedelta(seconds=TICK_SECONDS)))
         await self._async_update()   # applies anything that ended while HA was down
@@ -64,6 +71,11 @@ class ChildController:
     # ---- state for entities -------------------------------------------------------------------------
     def status(self) -> Status:
         return self.kid.status(dt_util.now())
+
+    @callback
+    def notify(self) -> None:
+        for cb in list(self._listeners):
+            cb()
 
     @callback
     def add_listener(self, cb: Callable[[], None]) -> CALLBACK_TYPE:

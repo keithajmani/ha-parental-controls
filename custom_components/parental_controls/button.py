@@ -10,10 +10,12 @@ from .entity import ChildEntity
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddEntitiesCallback) -> None:
     ctl = entry.runtime_data
-    async_add_entities([ActionButton(ctl, "block"), ActionButton(ctl, "allow"), ActionButton(ctl, "pause")])
+    async_add_entities([ActionButton(ctl, "block"), ActionButton(ctl, "allow"), ActionButton(ctl, "pause"),
+                        ActionButton(ctl, "check_devices")])
 
 
 class ActionButton(ChildEntity, ButtonEntity):
     async def async_press(self) -> None:
         key = self._attr_translation_key
-        await {"block": self.ctl.async_block, "allow": self.ctl.async_allow, "pause": self.ctl.async_pause}[key]()
+        await {"block": self.ctl.async_block, "allow": self.ctl.async_allow, "pause": self.ctl.async_pause,
+               "check_devices": self.ctl.devices.async_refresh}[key]()
