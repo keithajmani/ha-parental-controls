@@ -8,6 +8,12 @@
  * IDs keep working.
  */
 const QUICK = [15, 30, 60];
+const BT_ROWS = [
+  ["bedtime_weeknight_start", "mdi:weather-night", "Sun\u2013Thu off at"],
+  ["bedtime_weekend_start", "mdi:party-popper", "Fri & Sat off at"],
+  ["bedtime_end", "mdi:weather-sunset-up", "Back on at"],
+];
+
 const KIND_ICON = { phone: "mdi:cellphone", tablet: "mdi:tablet", laptop: "mdi:laptop", desktop: "mdi:desktop-tower-monitor",
   console: "mdi:gamepad-variant", speaker: "mdi:speaker-wireless", other: "mdi:devices" };
 const LOOK = {
@@ -20,8 +26,8 @@ const LOOK = {
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const clock = (d) => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-const hhmm = (v) => { if (!v) return "–"; const [h, m] = v.split(":").map(Number); const d = new Date(); d.setHours(h, m, 0, 0); return clock(d); };
-const speed = (b) => b == null ? "–" : b < 999500 ? `${Math.round(b / 1e3)} kbps` : `${(b / 1e6) >= 10 ? (b / 1e6).toFixed(0) : (b / 1e6).toFixed(1)} Mbps`;
+const hhmm = (v) => { if (!v) return "\u2013"; const [h, m] = v.split(":").map(Number); const d = new Date(); d.setHours(h, m, 0, 0); return clock(d); };
+const speed = (b) => b == null ? "\u2013" : b < 999500 ? `${Math.round(b / 1e3)} kbps` : `${(b / 1e6) >= 10 ? (b / 1e6).toFixed(0) : (b / 1e6).toFixed(1)} Mbps`;
 const seen = (t) => {
   if (!t) return "never"; const d = new Date(t * 1000), n = new Date();
   if (d.toDateString() === n.toDateString()) return clock(d);
@@ -85,21 +91,63 @@ class ParentalControlsCard extends HTMLElement {
     this.shadowRoot.innerHTML = `<style>${CSS}</style>${title ? `<div class="title">${esc(title)}</div>` : ""}
       ${this._statusHtml(st, a, look)}
       ${this._pauseHtml(st, a, ids)}
-      ${ids.devices ? this._devicesHtml(ids) : ""}`;
+      ${ids.devices ? this._devicesHtml(ids) : ""}
+      ${this._config.show_bedtime === true && ids.bedtime ? this._bedtimeHtml(a, ids) : ""}`;
     this._wire(st, a, ids);
+    this._syncPopup(a, ids);
+  }
+
+  // The bedtime pop-up lives on document.body (like HA's own dialogs), not inside the card: dashboards that use CSS
+  // containment (e.g. the sections view) would otherwise clip a fixed-position overlay to the card's own box.
+  _syncPopup(a, ids) {
+    if (!this._popup || !ids.bedtime) { this._closePopupEl(); return; }
+    if (!this._popEl) {
+      this._popEl = document.createElement("div");
+      this._popEl.attachShadow({ mode: "open" });
+      document.body.appendChild(this._popEl);
+      this._onKey = (ev) => { if (ev.key === "Escape") this._closePopup(); };
+      window.addEventListener("keydown", this._onKey);
+    }
+    const root = this._popEl.shadowRoot;
+    root.innerHTML = `<style>${CSS}${POPUP_CSS}</style>${this._popupHtml(a, ids)}`;
+    root.querySelector("#btclose")?.addEventListener("click", () => this._closePopup());
+    root.querySelector("#scrim")?.addEventListener("click", (ev) => { if (ev.target.id === "scrim") this._closePopup(); });
+    root.querySelector("#btsw2")?.addEventListener("click", () => this._call("switch", "toggle", { entity_id: ids.bedtime }));
+    this._wireSteps(root);
+    if (!this._focused) { root.querySelector("#btclose")?.focus(); this._focused = true; }
+  }
+  _closePopup() { this._popup = false; this._closePopupEl(); }
+  _closePopupEl() {
+    if (this._popEl) { this._popEl.remove(); this._popEl = null; }
+    if (this._onKey) { window.removeEventListener("keydown", this._onKey); this._onKey = null; }
+    this._focused = false;
+  }
+  disconnectedCallback() { this._closePopupEl(); }
+
+  _wireSteps(root) {
+    const step = Number(this._config.bedtime_step || 15);
+    root.querySelectorAll(".btrow .step").forEach((b) => b.addEventListener("click", () => {
+      const ent = b.dataset.ent, cur = this._hass.states[ent]?.state;
+      if (!ent || !cur || !cur.includes(":")) return;
+      const [h, m] = cur.split(":").map(Number);
+      const t = ((h * 60 + m + Number(b.dataset.d) * step) % 1440 + 1440) % 1440;
+      this._call("time", "set_value", { entity_id: ent,
+        time: `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}:00` });
+    }));
   }
 
   _statusHtml(st, a, look) {
     let sub = "Internet is on";
     const end = a.ends_at ? new Date(a.ends_at) : null;
-    if (st.state === "paused") sub = `Back on at ${clock(end)} · ${a.minutes_left} min left`;
-    else if (st.state === "allowed_for") sub = `${a.minutes_left} min left · then ${a.then === "bedtime" ? "bedtime" : "blocked"}`;
+    if (st.state === "paused") sub = `Back on at ${clock(end)} \u00b7 ${a.minutes_left} min left`;
+    else if (st.state === "allowed_for") sub = `${a.minutes_left} min left \u00b7 then ${a.then === "bedtime" ? "bedtime" : "blocked"}`;
     else if (st.state === "bedtime") sub = `Back on at ${hhmm(a.bedtime_end)}`;
     else if (st.state === "blocked") sub = "No time limit";
     const day = (() => { const n = new Date(); const d = n.getHours() >= 12 ? n.getDay() : (n.getDay() + 6) % 7; return d; })();
     const start = (day === 5 || day === 6) ? a.bedtime_weekend_start : a.bedtime_weeknight_start;
-    const chip = !a.bedtime_enabled ? `<span class="chip off"><ha-icon icon="mdi:weather-night"></ha-icon>Bedtime off</span>`
-      : `<span class="chip on"><ha-icon icon="mdi:weather-night"></ha-icon>Bedtime ${hhmm(start)} – ${hhmm(a.bedtime_end)}${a.allowed_tonight ? " · allowed tonight" : a.bedtime_now ? " · active" : ""}</span>`;
+    const launch = this._ids().bedtime ? `<ha-icon class="launch" icon="mdi:open-in-new"></ha-icon>` : "";
+    const chip = !a.bedtime_enabled ? `<button class="chip off" id="btchip" title="Bedtime settings"><ha-icon icon="mdi:weather-night"></ha-icon>Bedtime off${launch}</button>`
+      : `<button class="chip on" id="btchip" title="Bedtime settings"><ha-icon icon="mdi:weather-night"></ha-icon>Bedtime ${hhmm(start)} \u2013 ${hhmm(a.bedtime_end)}${a.allowed_tonight ? " \u00b7 allowed tonight" : a.bedtime_now ? " \u00b7 active" : ""}${launch}</button>`;
     const blocking = a.router_blocked;
     const btn = blocking
       ? `<button class="globe allow" id="act" title="Allow"><ha-icon icon="mdi:web"></ha-icon></button>`
@@ -143,19 +191,48 @@ class ParentalControlsCard extends HTMLElement {
       const n = r.signal == null ? 0 : r.signal >= -67 ? 3 : r.signal >= -75 ? 2 : 1;
       const col = n === 3 ? "#66bb6a" : n === 2 ? "#ffca28" : "#ef5350";
       const bars = n ? `<span class="bars">${[3, 5, 8].map((h, i) => `<i style="height:${h}px;background:${i < n ? col : "rgba(127,127,127,0.35)"}"></i>`).join("")}</span>` : "";
-      const net = r.ssid && r.ssid !== "wired" ? "" : r.ssid === "wired" ? " • wired" : "";
-      const where = (r.ap ? ` • ${esc(r.ap.replace(/\s+U\d.*$/, ""))} AP` : "") + net;
+      const net = r.ssid && r.ssid !== "wired" ? "" : r.ssid === "wired" ? " \u2022 wired" : "";
+      const where = (r.ap ? ` \u2022 ${esc(r.ap.replace(/\s+U\d.*$/, ""))} AP` : "") + net;
       const label = r.blocked ? "Blocked" : "Online";
-      const status = r.online ? `<span class="${r.blocked ? "red" : "green"}">${label}${where}</span>${bars}` : `Away • last seen ${seen(r.last_seen)}`;
+      const status = r.online ? `<span class="${r.blocked ? "red" : "green"}">${label}${where}</span>${bars}` : `Away \u2022 last seen ${seen(r.last_seen)}`;
       const g = !anyBlock ? "" : r.block_entity
         ? `<button class="dglobe ${r.blocked ? "allow" : "block"}" data-ent="${esc(r.block_entity)}" data-on="${r.blocked ? 1 : 0}" title="${r.blocked ? "Allow" : "Block"} ${esc(r.name)}"><ha-icon icon="${r.blocked ? "mdi:web" : "mdi:web-off"}"></ha-icon></button>`
         : "<span></span>";
-      const bw = r.online ? `<span class="bw"><span class="dn">${speed(r.down_bps)}</span><span class="dn">↓</span><span class="up">${speed(r.up_bps)}</span><span class="up">↑</span></span>` : "<span></span>";
+      const bw = r.online ? `<span class="bw"><span class="dn">${speed(r.down_bps)}</span><span class="dn">\u2193</span><span class="up">${speed(r.up_bps)}</span><span class="up">\u2191</span></span>` : "<span></span>";
       return `<div class="drow${r.online ? "" : " away"}${anyBlock ? " withb" : ""}"><ha-icon class="kind" icon="${KIND_ICON[r.kind] || KIND_ICON.other}"></ha-icon>
         <div class="dtext"><div class="dn1">${esc(r.name)}</div><div class="dn2">${status}</div></div>${g}${bw}</div>`;
     }).join("");
-    const foot = a.checked && !live ? `<div class="foot">Checked ${clock(new Date(a.checked))} • tap Check to refresh</div>` : "";
+    const foot = a.checked && !live ? `<div class="foot">Checked ${clock(new Date(a.checked))} \u2022 tap Check to refresh</div>` : "";
     return `<ha-card class="group">${head}${body}${foot}</ha-card>`;
+  }
+
+  _btRows(ids) {
+    return BT_ROWS.map(([key, icon, label]) => `<div class="btrow">
+        <ha-icon class="ricon" icon="${icon}"></ha-icon><span class="lbl">${label}</span>
+        <button class="step" data-ent="${ids[key] || ""}" data-d="-1" aria-label="${label} earlier"><ha-icon icon="mdi:minus"></ha-icon></button>
+        <span class="val">${hhmm(this._hass.states[ids[key]]?.state?.slice(0, 5))}</span>
+        <button class="step" data-ent="${ids[key] || ""}" data-d="1" aria-label="${label} later"><ha-icon icon="mdi:plus"></ha-icon></button></div>`).join("");
+  }
+
+  _popupHtml(a, ids) {
+    // the old Settings tab's design for this child, as a pop-up opened from the Bedtime pill
+    const on = this._hass.states[ids.bedtime]?.state === "on";
+    return `<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-label="Bedtime settings">
+      <div class="shead"><span class="stitle">${esc(a.child || "")} \u00b7 Bedtime</span>
+        <button class="close" id="btclose" aria-label="Close"><ha-icon icon="mdi:close"></ha-icon></button></div>
+      <div class="khead"><span>Bedtime</span><button class="tog${on ? " on" : ""}" id="btsw2" aria-pressed="${on}"><span>${on ? "On" : "Off"}</span><i class="sw"><i></i></i></button></div>
+      ${this._btRows(ids)}</div></div>`;
+  }
+
+  _bedtimeHtml(a, ids) {
+    // collapsible, like Devices: closed it shows a one-line summary; open it has the switch and the three times
+    const on = this._hass.states[ids.bedtime]?.state === "on";
+    const summary = on ? `${hhmm(a.bedtime_weeknight_start)} \u2013 ${hhmm(a.bedtime_end)}` : "Off";
+    const head = `<div class="dhead" id="btoggle"><span class="h">Bedtime${this._btOpen ? ` <ha-icon class="chev" icon="mdi:chevron-up"></ha-icon>` : ""}</span>
+      ${this._btOpen ? `<button class="tog${on ? " on" : ""}" id="btsw" aria-pressed="${on}"><span>${on ? "On" : "Off"}</span><i class="sw"><i></i></i></button>`
+      : `<span class="hint">${summary} <ha-icon icon="mdi:chevron-down"></ha-icon></span>`}</div>`;
+    if (!this._btOpen) return `<ha-card class="group">${head}</ha-card>`;
+    return `<ha-card class="group">${head}${this._btRows(ids)}</ha-card>`;
   }
 
   _wire(st, a, ids) {
@@ -180,6 +257,13 @@ class ParentalControlsCard extends HTMLElement {
       this._key = null; this._render();
     });
     $("#check")?.addEventListener("click", () => this._press("check_devices"));
+    $("#btoggle")?.addEventListener("click", (ev) => {
+      if (ev.target.closest("button")) return;
+      this._btOpen = !this._btOpen; this._key = null; this._render();
+    });
+    $("#btsw")?.addEventListener("click", () => this._call("switch", "toggle", { entity_id: ids.bedtime }));
+    $("#btchip")?.addEventListener("click", () => { if (!ids.bedtime) return; this._popup = true; this._syncPopup(a, ids); });
+    this._wireSteps(this.shadowRoot);
     $("#live")?.addEventListener("click", () => this._call("switch", "toggle", { entity_id: ids.devices_live }));
     this.shadowRoot.querySelectorAll(".dglobe").forEach((b) => b.addEventListener("click", () => {
       const ent = b.dataset.ent;
@@ -205,6 +289,8 @@ button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 
 .chiprow { margin: 8px 0 0 56px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; border-radius: 12px; padding: 4px 10px; --mdc-icon-size: 15px; }
 .chip.off { color: #9e9e9e; background: rgba(127,127,127,0.12); }
+button.chip { cursor: pointer; }
+.chip .launch { --mdc-icon-size: 13px; opacity: .75; margin-left: 2px; }
 .chip.on { color: #c5cae9; background: rgba(121,134,203,0.18); }
 .h { font-size: 16px; font-weight: 600; }
 .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
@@ -249,7 +335,28 @@ button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 
 .bw { display: grid; grid-template-columns: auto 12px; column-gap: 4px; justify-content: end; font-size: 12.5px; line-height: 1.35; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bw .dn { color: #90caf9; } .bw .up { color: #ce93d8; } .bw span:nth-child(even) { text-align: center; }
 .msg { font-size: 13px; color: var(--secondary-text-color); padding: 8px 0; } .msg.err { color: #ef9a9a; }
+.tog { display: inline-flex; gap: 10px; align-items: center; font-size: 13px; color: var(--secondary-text-color); }
+.tog .sw { width: 40px; height: 22px; border-radius: 11px; background: rgba(127,127,127,0.35); position: relative; }
+.tog .sw i { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #e0e0e0; transition: left .15s; }
+.tog.on .sw { background: #7986cb; } .tog.on .sw i { left: 21px; background: #fff; }
+.btrow { display: grid; grid-template-columns: 26px minmax(0, 1fr) 38px 86px 38px; gap: 6px; align-items: center; padding: 8px 0; border-top: 1px solid var(--divider-color); }
+.btrow .ricon { color: #9fa8da; --mdc-icon-size: 22px; }
+.btrow .lbl { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.btrow .step { width: 38px; height: 34px; border-radius: 10px; background: rgba(121,134,203,0.2); color: #c5cae9; display: flex; align-items: center; justify-content: center; --mdc-icon-size: 18px; }
+.btrow .val { text-align: center; font-size: 16px; font-weight: 600; color: #9fa8da; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .foot { font-size: 12px; color: var(--secondary-text-color); margin-top: 6px; }
+`;
+
+const POPUP_CSS = `
+.scrim { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center;
+  padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px)); }
+.sheet { width: min(420px, 100%); background: var(--ha-card-background, var(--card-background-color, #1c1c1c)); border-radius: 18px;
+  padding: 8px 16px 6px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); color: var(--primary-text-color); }
+.shead { display: flex; justify-content: space-between; align-items: center; min-height: 44px; }
+.stitle { font-size: 18px; font-weight: 600; }
+.close { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; --mdc-icon-size: 22px; opacity: .8; }
+.sheet .khead { display: flex; justify-content: space-between; align-items: center; min-height: 40px; border-top: 1px solid var(--divider-color); font-size: 15px; }
+.scrim { font-family: var(--paper-font-body1_-_font-family, Roboto, sans-serif); color: var(--primary-text-color, #e1e1e1); }
 `;
 
 class ParentalControlsCardEditor extends HTMLElement {
@@ -274,10 +381,124 @@ class ParentalControlsCardEditor extends HTMLElement {
   }
 }
 
+/* Parental Controls Settings card: bedtime for every child (or the ones listed), like the Settings tab it replaces.
+ *
+ *   type: custom:parental-controls-settings-card
+ *   # entities: [sensor.riley_parental_controls_internet]   (optional; default: all children)
+ *   # step: 15                                                  (optional; minutes per \u2212 / + press)
+ */
+
+class ParentalControlsSettingsCard extends HTMLElement {
+  setConfig(config) { this._config = config || {}; if (!this.shadowRoot) this.attachShadow({ mode: "open" }); }
+  getCardSize() { return 4 * this._children().length + 1; }
+  static getStubConfig() { return {}; }
+  static getConfigElement() { return document.createElement("parental-controls-settings-card-editor"); }
+
+  set hass(hass) {
+    this._hass = hass;
+    const ids = this._children().flatMap((c) => Object.values(c.ids));
+    const key = ids.map((e) => { const s = hass.states[e]; return s ? s.state + s.last_updated : ""; }).join("|");
+    if (key !== this._key) { this._key = key; this._render(); }
+  }
+
+  _children() {
+    const reg = this._hass?.entities || {};
+    const wanted = this._config.entities;
+    const sensors = wanted && wanted.length ? wanted : Object.keys(reg).filter((id) =>
+      reg[id].platform === "parental_controls" && reg[id].translation_key === "internet").sort();
+    return sensors.map((sensor) => {
+      const dev = reg[sensor]?.device_id, ids = {};
+      for (const [id, e] of Object.entries(reg)) {
+        if (dev && e.device_id === dev && e.platform === "parental_controls"
+            && ["bedtime", "bedtime_weeknight_start", "bedtime_weekend_start", "bedtime_end"].includes(e.translation_key)) ids[e.translation_key] = id;
+      }
+      const st = this._hass.states[sensor];
+      return { sensor, ids, name: st?.attributes?.child || st?.attributes?.friendly_name || sensor };
+    });
+  }
+
+  _render() {
+    const kids = this._children();
+    const title = this._config.title ?? "Bedtime";
+    const body = kids.length ? kids.map((k) => {
+      const on = this._hass.states[k.ids.bedtime]?.state === "on";
+      const rows = BT_ROWS.map(([key, icon, label]) => `<div class="row">
+          <ha-icon class="ricon" icon="${icon}"></ha-icon><span class="lbl">${label}</span>
+          <button class="step" data-ent="${k.ids[key] || ""}" data-d="-1" aria-label="${label} earlier"><ha-icon icon="mdi:minus"></ha-icon></button>
+          <span class="val">${hhmm(this._hass.states[k.ids[key]]?.state?.slice(0, 5))}</span>
+          <button class="step" data-ent="${k.ids[key] || ""}" data-d="1" aria-label="${label} later"><ha-icon icon="mdi:plus"></ha-icon></button></div>`).join("");
+      return `<ha-card class="kid"><div class="khead"><span class="kname">${esc(k.name)}</span>
+          <button class="tog${on ? " on" : ""}" data-ent="${k.ids.bedtime || ""}" aria-pressed="${on}"><span>Bedtime</span><i class="sw"><i></i></i></button></div>${rows}</ha-card>`;
+    }).join("") : `<ha-card class="kid"><div class="msg">No children set up yet. Add one: Settings \u2192 Devices &amp; services \u2192 Parental Controls.</div></ha-card>`;
+    this.shadowRoot.innerHTML = `<style>${SETTINGS_CSS}</style>${title ? `<div class="title">${esc(title)}</div>` : ""}${body}`;
+    this.shadowRoot.querySelectorAll(".tog").forEach((b) => b.addEventListener("click", () => {
+      if (b.dataset.ent) this._hass.callService("switch", "toggle", { entity_id: b.dataset.ent });
+    }));
+    const step = Number(this._config.step || 15);
+    this.shadowRoot.querySelectorAll(".step").forEach((b) => b.addEventListener("click", () => {
+      const ent = b.dataset.ent, cur = this._hass.states[ent]?.state;
+      if (!ent || !cur || !cur.includes(":")) return;
+      const [h, m] = cur.split(":").map(Number);
+      const t = ((h * 60 + m + Number(b.dataset.d) * step) % 1440 + 1440) % 1440;
+      const v = `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}:00`;
+      this._hass.callService("time", "set_value", { entity_id: ent, time: v });
+    }));
+  }
+}
+
+const SETTINGS_CSS = `
+:host { display: grid; gap: 10px; }
+.title { font-size: 20px; margin: 4px 6px 2px; color: var(--primary-text-color); }
+ha-card.kid { padding: 10px 16px 4px; border-radius: 16px; }
+button { font: inherit; border: none; cursor: pointer; color: inherit; background: none; padding: 0; }
+button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+.khead { display: flex; justify-content: space-between; align-items: center; min-height: 44px; border-bottom: 1px solid var(--divider-color); }
+.kname { font-size: 20px; font-weight: 600; }
+.tog { display: inline-flex; gap: 10px; align-items: center; font-size: 14px; color: var(--secondary-text-color); }
+.tog .sw { width: 44px; height: 24px; border-radius: 12px; background: rgba(127,127,127,0.35); position: relative; }
+.tog .sw i { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #e0e0e0; transition: left .15s; }
+.tog.on .sw { background: #7986cb; } .tog.on .sw i { left: 23px; background: #fff; }
+.row { display: grid; grid-template-columns: 26px minmax(0, 1fr) 38px 86px 38px; gap: 6px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--divider-color); }
+.row:last-child { border-bottom: none; }
+.ricon { color: #9fa8da; --mdc-icon-size: 22px; }
+.lbl { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.step { width: 38px; height: 34px; border-radius: 10px; background: rgba(121,134,203,0.2); color: #c5cae9; display: flex; align-items: center; justify-content: center; --mdc-icon-size: 18px; }
+.val { text-align: center; font-size: 17px; font-weight: 600; color: #9fa8da; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.msg { font-size: 13px; color: var(--secondary-text-color); padding: 8px 0 12px; }
+`;
+
+class ParentalControlsSettingsCardEditor extends HTMLElement {
+  setConfig(config) { this._config = config; this._render(); }
+  set hass(hass) { this._hass = hass; this._render(); }
+  _render() {
+    if (!this._hass || !this._config) return;
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.computeLabel = (s) => ({ entities: "Children (leave empty for all)", title: "Title (optional)", step: "Minutes per \u2212 / + press" })[s.name];
+      this._form.schema = [
+        { name: "entities", selector: { entity: { integration: "parental_controls", domain: "sensor", multiple: true } } },
+        { name: "title", selector: { text: {} } },
+        { name: "step", selector: { number: { min: 1, max: 60, step: 1, mode: "box" } } },
+      ];
+      this._form.addEventListener("value-changed", (ev) => this.dispatchEvent(new CustomEvent("config-changed",
+        { detail: { config: ev.detail.value }, bubbles: true, composed: true })));
+      this.appendChild(this._form);
+    }
+    this._form.hass = this._hass;
+    this._form.data = this._config;
+  }
+}
+
 if (!customElements.get("parental-controls-card")) customElements.define("parental-controls-card", ParentalControlsCard);
 if (!customElements.get("parental-controls-card-editor")) customElements.define("parental-controls-card-editor", ParentalControlsCardEditor);
+if (!customElements.get("parental-controls-settings-card")) customElements.define("parental-controls-settings-card", ParentalControlsSettingsCard);
+if (!customElements.get("parental-controls-settings-card-editor")) customElements.define("parental-controls-settings-card-editor", ParentalControlsSettingsCardEditor);
 window.customCards = window.customCards || [];
 if (!window.customCards.some((c) => c.type === "parental-controls-card")) {
   window.customCards.push({ type: "parental-controls-card", name: "Parental Controls", preview: false,
     description: "One child's internet: status with Block / Allow, Pause or Allow for, and Devices." });
+}
+if (!window.customCards.some((c) => c.type === "parental-controls-settings-card")) {
+  window.customCards.push({ type: "parental-controls-settings-card", name: "Parental Controls Settings", preview: false,
+    description: "Bedtime for each child: on/off and the off / back-on times." });
 }

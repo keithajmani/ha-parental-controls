@@ -13,11 +13,11 @@ USERS = [
     {"mac": "aa:aa:aa:aa:aa:01", "name": "Sam's iPad", "last_seen": 1790000000},
     {"mac": "aa:aa:aa:aa:aa:02", "name": "Sam's laptop", "last_seen": 1790000000},
     {"mac": "bb:bb:bb:bb:bb:01", "hostname": "kobo", "last_seen": 1789000000},
-    {"mac": "cc:cc:cc:cc:cc:01", "name": "Kitchen speaker", "last_seen": 1790000000},
+    {"mac": "cc:cc:cc:cc:cc:01", "name": "Den speaker", "last_seen": 1790000000},
 ]
 STA = [{"mac": "aa:aa:aa:aa:aa:01", "name": "Sam's iPad", "essid": "home", "ap_mac": "dd:dd:dd:dd:dd:01",
         "signal": -60, "tx_bytes": 1000, "rx_bytes": 500, "tx_bytes-r": 125000, "rx_bytes-r": 1250}]
-DEVICES = [{"mac": "dd:dd:dd:dd:dd:01", "type": "uap", "name": "Hall AP"}]
+DEVICES = [{"mac": "dd:dd:dd:dd:dd:01", "type": "uap", "name": "Loft AP"}]
 
 
 @pytest.fixture(autouse=True)
@@ -83,7 +83,7 @@ async def test_group_members_are_listed_with_status_and_speed(hass, unifi):
     rows = {r["mac"]: r for r in st.attributes["devices"]}
     assert st.state == "1"                                  # one of the two group devices is online
     ipad = rows["aa:aa:aa:aa:aa:01"]
-    assert ipad["online"] and ipad["in_group"] and ipad["ap"] == "Hall AP" and ipad["kind"] == "tablet"
+    assert ipad["online"] and ipad["in_group"] and ipad["ap"] == "Loft AP" and ipad["kind"] == "tablet"
     assert ipad["down_bps"] == 1_000_000 and ipad["up_bps"] == 10_000   # first sample: the router's own rate
     assert rows["aa:aa:aa:aa:aa:02"]["online"] is False
 
@@ -112,7 +112,7 @@ async def test_search_pick_and_block_a_device_outside_the_group(hass, unifi):
         r["flow_id"], {"cc:cc:cc:cc:cc:01": "input_boolean.speaker_block"})
     assert r["type"] == "create_entry"
     await hass.async_block_till_done()   # options change reloads the entry
-    sw = "switch.sam_parental_controls_kitchen_speaker_blocked"
+    sw = "switch.sam_parental_controls_den_speaker_blocked"
     assert hass.states.get(sw).state == "off"
     await hass.services.async_call("switch", "turn_on", {"entity_id": sw}, blocking=True)
     await hass.async_block_till_done()

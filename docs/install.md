@@ -58,12 +58,26 @@ type: custom:parental-controls-card
 entity: sensor.riley_parental_controls_internet   # the child's Internet sensor
 # title: Riley's Internet      (optional; default "<Child>'s Internet", empty string to hide)
 # max_minutes: 60              (optional; the Custom slider's maximum)
+# show_bedtime: false          (optional; true adds a collapsible Bedtime section at the bottom)
 ```
 
 One card per child, typically one dashboard view (tab) per child. The card shows the status with a Block / Allow
 button, Pause (or Allow for, when blocked) with 15 / 30 / 60 and a Custom slider, and Devices (tap to show;
 opening it runs a check; Live refreshes every 5 s). A device with its own block switch gets a block / allow button.
-After an update, refresh the browser (or the app) once so it loads the new card.
+Tap the Bedtime pill in the status box (the one with the small arrow) to change that child's bedtime: on/off and the
+three times, in a pop-up. After an update, refresh the browser (or the app) once so it loads the new card.
+
+### The settings card
+
+```yaml
+type: custom:parental-controls-settings-card
+# entities: [sensor.riley_parental_controls_internet]   (optional; default: every child)
+# title: Bedtime                                         (optional)
+# step: 15                                               (optional; minutes per - / + press)
+```
+
+One card for the whole household: per child, Bedtime on/off and the three times (Sun-Thu off at, Fri & Sat off at,
+Back on at) with - / + buttons. The same settings stay available on each child's device page.
 
 To remove: delete the integration entries, then the folder, then restart.
 

@@ -187,3 +187,10 @@ def test_brand_icons_ship_inside_the_integration():
         data = (brand / name).read_bytes()
         assert data[:8] == b"\x89PNG\r\n\x1a\n"
         assert struct.unpack(">II", data[16:24]) == (size, size), name
+
+
+def test_card_file_is_ascii_and_defines_both_cards():
+    from pathlib import Path
+    js = (Path(__file__).parent.parent / "custom_components/parental_controls/frontend/parental-controls-card.js").read_text()
+    assert js.isascii()                       # reads the same whatever charset it is served with
+    assert 'define("parental-controls-card"' in js and 'define("parental-controls-settings-card"' in js

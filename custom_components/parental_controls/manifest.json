@@ -13,7 +13,7 @@
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/keithajmani/ha-parental-controls/issues",
   "requirements": [],
-  "version": "0.3.2",
+  "version": "0.4.0",
   "after_dependencies": [
     "frontend",
     "lovelace"
