@@ -176,3 +176,14 @@ async def test_card_is_added_as_a_dashboard_resource_once(hass):
     await hass.config_entries.async_reload(hass.config_entries.async_entries("parental_controls")[0].entry_id)
     await hass.async_block_till_done()
     assert sum(u.startswith("/parental_controls/") for u in [i["url"] for i in res.async_items()]) == 1
+
+
+def test_brand_icons_ship_inside_the_integration():
+    """HA 2026.x serves a custom integration's icon from <integration>/brand/ (no brands-repo PR needed)."""
+    from pathlib import Path
+    import struct
+    brand = Path(__file__).parent.parent / "custom_components" / "parental_controls" / "brand"
+    for name, size in (("icon.png", 256), ("icon@2x.png", 512)):
+        data = (brand / name).read_bytes()
+        assert data[:8] == b"\x89PNG\r\n\x1a\n"
+        assert struct.unpack(">II", data[16:24]) == (size, size), name
