@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .const import CONF_KIND, DOMAIN, KIND_ROUTER, LIVE_INTERVAL, LIVE_TIMEOUT
-from .unifi import UniFiClient, UniFiError
+from .unifi import UniFiAuthError, UniFiClient, UniFiError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,6 +37,7 @@ class ChildDevices:
         self.rows: list[dict] = []
         self.checked: datetime | None = None
         self.error: str | None = None
+        self.members: set[str] | None = None    # the group's MACs, once known
         self._live_task: asyncio.Task | None = None
 
     @property
@@ -54,16 +55,22 @@ class ChildDevices:
             members = (await client.kid_groups()).get(self.group, []) if self.group else []
             macs = list(dict.fromkeys(members + list(self.configured)))
             clients = await client.live_clients(macs)
+        except UniFiAuthError as err:
+            self.error = str(err)
+            _reauth(self.hass)
+            self._notify()
+            return
         except UniFiError as err:
             self.error = str(err)
             _LOGGER.warning("Parental Controls: device check failed: %s", err)
             self._notify()
             return
-        member_set = set(members)
+        member_set = self.members = set(members)
         rows = []
         for c in clients:
             cfg = self.configured.get(c.mac, {})
             rows.append({
+                "control": self.control(c.mac),
                 "name": cfg.get("name") or c.name, "mac": c.mac, "kind": _kind(cfg.get("name") or c.name),
                 "online": c.online, "ssid": c.ssid, "ap": c.ap, "signal": c.signal,
                 "down_bps": c.down_bps, "up_bps": c.up_bps, "last_seen": c.last_seen,
@@ -72,6 +79,32 @@ class ChildDevices:
         rows.sort(key=lambda r: (not r["online"], r["name"].lower()))
         self.rows, self.error, self.checked = rows, None, dt_util.now()
         self._notify()
+
+    async def async_load_members(self) -> None:
+        """Group membership only (cached by the router client), so each picked device's Blocking is known without a
+        device check."""
+        client = router_client(self.hass)
+        if client is None or not self.group:
+            return
+        try:
+            self.members = set((await client.kid_groups()).get(self.group, []))
+        except UniFiError:
+            return
+        self._notify()
+
+    def control(self, mac: str) -> str | None:
+        """How a device is controlled: "own" (its own block switch), "group" (follows the child), "stats" (status and
+        statistics only). None while group membership isn't known yet."""
+        if (self.configured.get(mac) or {}).get("block_entity"):
+            return "own"
+        if not self.group:
+            return "stats"
+        if self.members is None:
+            return None
+        return "group" if mac in self.members else "stats"
+
+    def row(self, mac: str) -> dict | None:
+        return next((r for r in self.rows if r["mac"] == mac), None)
 
     def blocked(self, row: dict) -> bool | None:
         """Individual block state for a controllable device (None when it has no block switch)."""
@@ -102,6 +135,13 @@ class ChildDevices:
     async def async_stop(self) -> None:
         if self.live:
             self._live_task.cancel()
+
+
+def _reauth(hass: HomeAssistant) -> None:
+    """The router login stopped working: ask for it again (Settings shows a Re-authenticate prompt)."""
+    for e in hass.config_entries.async_entries(DOMAIN):
+        if e.data.get(CONF_KIND) == KIND_ROUTER:
+            e.async_start_reauth(hass)
 
 
 def _kind(name: str) -> str:

@@ -4,6 +4,10 @@ Talks to the UniFi Network application on a UniFi OS console (UCG, UDM, UDR, Clo
 view-only admin. Blocking itself is done through Home Assistant switches (e.g. the UniFi Network integration's
 per-group or per-device switches), so this login never needs write access.
 
+- Block rules: Policy Engine objects ("object-oriented network configs") set to turn off internet. HA's UniFi Network
+  integration shows each object as a switch with unique_id "object_oriented_network_config-<object id>"; an object
+  targets either groups (by group id) or clients (by MAC). Read on demand from the setup screens only.
+
 - One login, reused; logs in again only when the console says the session expired (consoles rate-limit logins).
 - Group members, known clients and access-point names are cached for 10 minutes.
 - Speeds are averaged from each client's byte counters over the last ~20 s. UniFi's own rate fields under-read
@@ -20,12 +24,14 @@ import logging
 
 import aiohttp
 
-from .provider import Client
+from .provider import BlockRule, Client
 
 _LOGGER = logging.getLogger(__name__)
 CACHE_TTL = 600
 RATE_WINDOW = 20
 RATE_MIN_SPAN = 4
+RULES_TTL = 30
+OBJECT_SWITCH_PREFIX = "object_oriented_network_config-"
 
 
 def unifi_session(hass) -> aiohttp.ClientSession:
@@ -47,6 +53,7 @@ class UniFiAuthError(UniFiError):
 class _Cache:
     at: float = 0.0
     groups: dict[str, list[str]] = field(default_factory=dict)   # group name -> member MACs
+    group_ids: dict[str, str] = field(default_factory=dict)      # group id -> name
     users: dict[str, dict] = field(default_factory=dict)         # MAC -> known client record
     aps: dict[str, str] = field(default_factory=dict)            # AP MAC -> name
 
@@ -61,6 +68,7 @@ class UniFiClient:
         self._logged_in = False
         self._cache = _Cache()
         self._hist: dict[str, list[tuple[float, int, int]]] = {}
+        self._rules: tuple[float, dict[str, BlockRule]] = (0.0, {})
 
     # ---- HTTP ---------------------------------------------------------------------------------------
     async def login(self) -> None:
@@ -107,6 +115,7 @@ class UniFiClient:
         self._cache = _Cache(
             at=time.time(),
             groups={g["name"]: [m.lower() for m in g.get("members", [])] for g in groups},
+            group_ids={g["id"]: g["name"] for g in groups if g.get("id")},
             users={u["mac"].lower(): u for u in users},
             aps={d["mac"].lower(): d.get("name") or d["mac"] for d in devices if d.get("type") == "uap"},
         )
@@ -153,6 +162,28 @@ class UniFiClient:
                               groups=[g for g, members in c.groups.items() if mac in members]))
         out.sort(key=lambda x: (not x.online, x.name.lower()))
         return out
+
+    async def block_rules(self) -> dict[str, BlockRule]:
+        """Policy Engine objects that turn off internet, keyed by the unique_id of HA's UniFi switch for each.
+        Objects that only limit speed, prioritise or route are left out."""
+        at, rules = self._rules
+        if time.time() - at < RULES_TTL:
+            return rules
+        c = await self._cached()
+        rules = {}
+        for o in await self._get(f"/v2/api/site/{self._site}/object-oriented-network-configs"):
+            secure = o.get("secure") or {}
+            if not secure.get("enabled") or (secure.get("internet") or {}).get("mode") != "TURN_OFF_INTERNET":
+                continue
+            targets = o.get("targets") or []
+            groups = [c.group_ids.get(t.get("value"), t.get("value")) for t in targets
+                      if t.get("type") == "NETWORK_GROUP_ID"]
+            macs = [str(t.get("value")).lower() for t in targets if t.get("type") == "MAC"]
+            rules[OBJECT_SWITCH_PREFIX + str(o.get("id") or o.get("_id"))] = BlockRule(
+                name=o.get("name") or "", groups=groups if o.get("target_type") == "GROUPS" else [],
+                macs=macs if o.get("target_type") == "CLIENTS" else [])
+        self._rules = (time.time(), rules)
+        return rules
 
     async def live_clients(self, macs: list[str]) -> list[Client]:
         """Current status and averaged speeds for these MACs. One request when the cache is warm."""

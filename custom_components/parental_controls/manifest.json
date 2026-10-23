@@ -1,6 +1,10 @@
 {
   "domain": "parental_controls",
   "name": "Parental Controls",
+  "after_dependencies": [
+    "frontend",
+    "lovelace"
+  ],
   "codeowners": [
     "@keithajmani"
   ],
@@ -13,9 +17,5 @@
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/keithajmani/ha-parental-controls/issues",
   "requirements": [],
-  "version": "0.4.3",
-  "after_dependencies": [
-    "frontend",
-    "lovelace"
-  ]
+  "version": "0.5.2"
 }

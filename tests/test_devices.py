@@ -8,13 +8,38 @@ DOMAIN = "parental_controls"
 HOST = "10.0.0.1"
 U = f"https://{HOST}"
 NET = f"{U}/proxy/network"
-GROUPS = [{"name": "Sam", "members": ["aa:aa:aa:aa:aa:01", "aa:aa:aa:aa:aa:02"]}, {"name": "Riley", "members": []}]
+GROUPS = [{"id": "g1", "name": "Sam", "members": ["aa:aa:aa:aa:aa:01", "aa:aa:aa:aa:aa:02"]},
+          {"id": "g2", "name": "Riley", "members": ["ee:ee:ee:ee:ee:01"]}]
 USERS = [
     {"mac": "aa:aa:aa:aa:aa:01", "name": "Sam's iPad", "last_seen": 1790000000},
     {"mac": "aa:aa:aa:aa:aa:02", "name": "Sam's laptop", "last_seen": 1790000000},
     {"mac": "bb:bb:bb:bb:bb:01", "hostname": "kobo", "last_seen": 1789000000},
     {"mac": "cc:cc:cc:cc:cc:01", "name": "Den speaker", "last_seen": 1790000000},
+    {"mac": "ee:ee:ee:ee:ee:01", "name": "Riley's Kobo", "last_seen": 1790000000},
 ]
+TURN_OFF = {"enabled": True, "internet": {"mode": "TURN_OFF_INTERNET", "schedule": {"mode": "ALWAYS"}}}
+OBJECTS = [   # UniFi Policy Engine objects; HA's UniFi integration shows each as a switch
+    {"id": "o1", "name": "Sam Block", "enabled": False, "target_type": "GROUPS",
+     "targets": [{"type": "NETWORK_GROUP_ID", "value": "g1"}], "secure": TURN_OFF},
+    {"id": "o2", "name": "Riley Block", "enabled": False, "target_type": "GROUPS",
+     "targets": [{"type": "NETWORK_GROUP_ID", "value": "g2"}], "secure": TURN_OFF},
+    {"id": "o3", "name": "Den speaker block", "enabled": False, "target_type": "CLIENTS",
+     "targets": [{"type": "MAC", "value": "CC:CC:CC:CC:CC:01"}], "secure": TURN_OFF},
+    {"id": "o4", "name": "Sam speed limit", "enabled": True, "target_type": "GROUPS",
+     "targets": [{"type": "NETWORK_GROUP_ID", "value": "g1"}],
+     "secure": {"enabled": False, "internet": {"everything": True, "mode": "BLOCKLIST"}}},
+]
+UNIFI_SWITCHES = {"o1": "unifi_sam_block", "o2": "unifi_riley_block", "o3": "unifi_speaker_block",
+                  "o4": "unifi_sam_speed_limit"}
+
+
+def unifi_switches(hass):
+    """Stand-ins for the UniFi Network integration's Policy Engine switches (registry entries plus states)."""
+    from homeassistant.helpers import entity_registry as er
+    reg = er.async_get(hass)
+    for oid, obj in UNIFI_SWITCHES.items():
+        reg.async_get_or_create("switch", "unifi", f"object_oriented_network_config-{oid}", suggested_object_id=obj)
+        hass.states.async_set(f"switch.{obj}", "off")
 STA = [{"mac": "aa:aa:aa:aa:aa:01", "name": "Sam's iPad", "essid": "home", "ap_mac": "dd:dd:dd:dd:dd:01",
         "signal": -60, "tx_bytes": 1000, "rx_bytes": 500, "tx_bytes-r": 125000, "rx_bytes-r": 1250}]
 DEVICES = [{"mac": "dd:dd:dd:dd:dd:01", "type": "uap", "name": "Loft AP"}]
@@ -33,6 +58,7 @@ def unifi(aioclient_mock):
     aioclient_mock.get(f"{NET}/api/s/default/rest/user", json={"data": USERS})
     aioclient_mock.get(f"{NET}/api/s/default/stat/device", json={"data": DEVICES})
     aioclient_mock.get(f"{NET}/api/s/default/stat/sta", json={"data": STA})
+    aioclient_mock.get(f"{NET}/v2/api/site/default/object-oriented-network-configs", json=OBJECTS)
     return aioclient_mock
 
 
@@ -96,48 +122,55 @@ async def test_devices_follow_the_childs_block(hass, unifi):
     assert all(r["blocked"] for r in st.attributes["devices"] if r["in_group"])
 
 
-async def test_search_pick_and_block_a_device_outside_the_group(hass, unifi):
-    await add_router(hass)
-    entry = await add_child(hass)
+async def pick(hass, entry, pattern, macs):
+    """Options → Add devices → search → tick these MACs (wherever they are listed) → the Device blocking step."""
     r = await hass.config_entries.options.async_init(entry.entry_id)
     assert r["type"] == "menu"
     r = await hass.config_entries.options.async_configure(r["flow_id"], {"next_step_id": "add_devices"})
-    r = await hass.config_entries.options.async_configure(r["flow_id"], {"pattern": "speaker"})
-    assert r["step_id"] == "pick"
-    labels = {o["value"]: o["label"] for o in r["data_schema"].schema["picked"].config["options"]}
-    assert list(labels) == ["cc:cc:cc:cc:cc:01"] and "no group" in labels["cc:cc:cc:cc:cc:01"]
-    r = await hass.config_entries.options.async_configure(r["flow_id"], {"picked": ["cc:cc:cc:cc:cc:01"]})
-    assert r["step_id"] == "block"
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"pattern": pattern})
+    assert r["step_id"] == "pick", r
+    ticks = {}
+    for key in r["data_schema"].schema:
+        values = [o["value"] for o in r["data_schema"].schema[key].config["options"]]
+        ticks[str(key)] = [m for m in macs if m in values]
+    r = await hass.config_entries.options.async_configure(r["flow_id"], ticks)
+    assert r["step_id"] == "block", r
+    return r
+
+
+async def test_search_pick_and_block_a_device_outside_the_group(hass, unifi):
+    await add_router(hass)
+    unifi_switches(hass)
+    entry = await add_child(hass)
+    r = await pick(hass, entry, "speaker", ["cc:cc:cc:cc:cc:01"])
+    field = next(k for k in r["data_schema"].schema if str(k) == "Den speaker: block switch")
+    assert r["data_schema"].schema[field].config["include_entities"] == ["switch.unifi_speaker_block"]
     r = await hass.config_entries.options.async_configure(
-        r["flow_id"], {"cc:cc:cc:cc:cc:01": "input_boolean.speaker_block"})
+        r["flow_id"], {"Den speaker: block switch": "switch.unifi_speaker_block"})
     assert r["type"] == "create_entry"
     await hass.async_block_till_done()   # options change reloads the entry
-    sw = "switch.sam_parental_controls_den_speaker_blocked"
-    assert hass.states.get(sw).state == "off"
-    await hass.services.async_call("switch", "turn_on", {"entity_id": sw}, blocking=True)
-    await hass.async_block_till_done()
-    assert hass.states.get("input_boolean.speaker_block").state == "on"
+    assert entry.options["devices"]["cc:cc:cc:cc:cc:01"] == {
+        "name": "Den speaker", "block_entity": "switch.unifi_speaker_block", "confirmed": True}
+    hass.states.async_set("switch.unifi_speaker_block", "on")    # blocked on the router
     st = await check(hass)
     speaker = next(r for r in st.attributes["devices"] if r["mac"] == "cc:cc:cc:cc:cc:01")
-    assert speaker["blocked"] and not speaker["in_group"]
+    assert speaker["blocked"] and not speaker["in_group"] and speaker["control"] == "own"
     assert hass.states.get("input_boolean.sam_block").state == "off"   # the child is still online
+    assert hass.states.get("binary_sensor.den_speaker_blocked").state == "on"
 
 
-async def test_a_group_member_can_get_its_own_block(hass, unifi):
+async def test_a_group_member_follows_the_child(hass, unifi):
     await add_router(hass)
+    unifi_switches(hass)
     entry = await add_child(hass)
-    r = await hass.config_entries.options.async_init(entry.entry_id)
-    r = await hass.config_entries.options.async_configure(r["flow_id"], {"next_step_id": "add_devices"})
-    r = await hass.config_entries.options.async_configure(r["flow_id"], {"pattern": "*ipad*"})
-    labels = {o["value"]: o["label"] for o in r["data_schema"].schema["picked"].config["options"]}
-    assert "in this child's group" in labels["aa:aa:aa:aa:aa:01"]
-    r = await hass.config_entries.options.async_configure(r["flow_id"], {"picked": ["aa:aa:aa:aa:aa:01"]})
-    r = await hass.config_entries.options.async_configure(
-        r["flow_id"], {"aa:aa:aa:aa:aa:01": "input_boolean.speaker_block"})
+    r = await pick(hass, entry, "*ipad*", ["aa:aa:aa:aa:aa:01"])
+    assert "In Sam's group: Block, Pause and Bedtime cover it" in r["description_placeholders"]["devices"]
+    assert list(r["data_schema"].schema) == []          # no rule of its own, nothing to pick
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {})
     await hass.async_block_till_done()
     st = await check(hass)
     ipad = next(r for r in st.attributes["devices"] if r["mac"] == "aa:aa:aa:aa:aa:01")
-    assert ipad["in_group"] and ipad["block_entity"] == "input_boolean.speaker_block" and ipad["blocked"] is False
+    assert ipad["in_group"] and ipad["block_entity"] is None and ipad["control"] == "group"
 
 
 async def test_without_a_router_the_devices_list_says_so(hass):
@@ -193,7 +226,7 @@ async def test_missing_device_block_switch_raises_a_repair(hass, unifi, freezer)
     await add_router(hass)
     entry = await add_child(hass)
     hass.config_entries.async_update_entry(entry, options={**entry.options, "devices": {
-        "cc:cc:cc:cc:cc:01": {"name": "Den speaker", "block_entity": "switch.gone"}}})
+        "cc:cc:cc:cc:cc:01": {"name": "Den speaker", "block_entity": "switch.gone", "confirmed": True}}})
     await hass.async_block_till_done()
     for _ in range(12):
         freezer.tick(timedelta(seconds=30)); async_fire_time_changed(hass); await hass.async_block_till_done()

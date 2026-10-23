@@ -182,11 +182,24 @@ def test_brand_icons_ship_inside_the_integration():
     """HA 2026.x serves a custom integration's icon from <integration>/brand/ (no brands-repo PR needed)."""
     from pathlib import Path
     import struct
+    import zlib
     brand = Path(__file__).parent.parent / "custom_components" / "parental_controls" / "brand"
-    for name, size in (("icon.png", 256), ("icon@2x.png", 512)):
+    for name, size in (("icon.png", 256), ("icon@2x.png", 512), ("dark_icon.png", 256), ("dark_icon@2x.png", 512)):
         data = (brand / name).read_bytes()
         assert data[:8] == b"\x89PNG\r\n\x1a\n"
         assert struct.unpack(">II", data[16:24]) == (size, size), name
+        assert data[24:26] == bytes([8, 6]), name            # 8-bit RGBA
+        # transparent background: the top-left pixel (row 0 needs no unfiltering for its first pixel) has alpha 0
+        idat, i = b"", 8
+        while i < len(data):
+            n, kind = struct.unpack(">I4s", data[i:i + 8])
+            if kind == b"IDAT":
+                idat += data[i + 8:i + 8 + n]
+            i += 12 + n
+        assert zlib.decompress(idat)[1 + 3] == 0, name
+    # one drawing, two pause-ring colours: shield purple for light backgrounds, white for dark ones
+    light, dark = (brand / "icon.svg").read_text(), (brand / "dark_icon.svg").read_text()
+    assert 'stroke="#9FA8DA" stroke-width="8"' in light and 'stroke="#FFFFFF" stroke-width="8"' in dark
 
 
 def test_card_file_is_ascii_and_defines_both_cards():

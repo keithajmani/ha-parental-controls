@@ -192,10 +192,10 @@ class ParentalControlsCard extends HTMLElement {
 
   _devicesHtml(ids) {
     const ds = this._hass.states[ids.devices], live = this._hass.states[ids.devices_live]?.state === "on";
-    const head = `<div class="dhead" id="dtoggle"><span class="h">Devices${this._open ? ` <ha-icon class="chev" icon="mdi:chevron-up"></ha-icon>` : ""}</span>
+    // the open/close chevron stays beside "Devices" in both states, so a quick open-then-close never lands on Live
+    const head = `<div class="dhead" id="dtoggle"><span class="h">Devices <ha-icon class="chev" icon="mdi:chevron-${this._open ? "up" : "down"}"></ha-icon></span>
       ${this._open ? `<span class="dctl"><button class="check" id="check"><ha-icon icon="mdi:refresh"></ha-icon>Check</button>
-        <button class="live${live ? " on" : ""}" id="live"><i class="dot"></i>Live<i class="sw"><i></i></i></button></span>`
-      : `<span class="hint">Tap to show <ha-icon icon="mdi:chevron-down"></ha-icon></span>`}</div>`;
+        <button class="live${live ? " on" : ""}" id="live"><i class="dot"></i>Live<i class="sw"><i></i></i></button></span>` : ""}</div>`;
     if (!this._open) return `<ha-card class="group">${head}</ha-card>`;
     const a = ds?.attributes || {};
     const rows = a.devices || [];
@@ -206,15 +206,19 @@ class ParentalControlsCard extends HTMLElement {
       const col = n === 3 ? "#66bb6a" : n === 2 ? "#ffca28" : "#ef5350";
       const bars = n ? `<span class="bars">${[3, 5, 8].map((h, i) => `<i style="height:${h}px;background:${i < n ? col : "rgba(127,127,127,0.35)"}"></i>`).join("")}</span>` : "";
       const net = r.ssid && r.ssid !== "wired" ? "" : r.ssid === "wired" ? " \u2022 wired" : "";
-      const where = (r.ap ? ` \u2022 ${esc(r.ap.replace(/\s+U\d.*$/, ""))} AP` : "") + net;
+      const ap = r.ap ? r.ap.replace(/\s+U\d.*$/, "") : "";   // "Loft U7 Pro" -> "Loft AP"; "Den AP" stays as is
+      const where = (ap ? ` \u2022 ${esc(/\bAP$/i.test(ap) ? ap : `${ap} AP`)}` : "") + net;
+      // a device in the child's group reads Blocked whenever the child is (Block, Pause or Bedtime); devices outside
+      // the group keep their real state and carry a small "Stats only" tag
       const label = r.blocked ? "Blocked" : "Online";
-      const status = r.online ? `<span class="${r.blocked ? "red" : "green"}">${label}${where}</span>${bars}` : `Away \u2022 last seen ${seen(r.last_seen)}`;
+      const status = r.online ? `<span class="${r.blocked ? "red" : "green"}">${label}${where}</span>${bars}` : `Offline \u2022 last seen ${seen(r.last_seen)}`;
+      const tag = r.control === "stats" ? `<span class="tag">Stats only</span>` : "";
       const g = !anyBlock ? "" : r.block_entity
         ? `<button class="dglobe ${r.blocked ? "allow" : "block"}" data-ent="${esc(r.block_entity)}" data-on="${r.blocked ? 1 : 0}" title="${r.blocked ? "Allow" : "Block"} ${esc(r.name)}"><ha-icon icon="${r.blocked ? "mdi:web" : "mdi:web-off"}"></ha-icon></button>`
         : "<span></span>";
       const bw = r.online ? `<span class="bw"><span class="dn">${speed(r.down_bps)}</span><span class="dn">\u2193</span><span class="up">${speed(r.up_bps)}</span><span class="up">\u2191</span></span>` : "<span></span>";
       return `<div class="drow${r.online ? "" : " away"}${anyBlock ? " withb" : ""}"><ha-icon class="kind" icon="${KIND_ICON[r.kind] || KIND_ICON.other}"></ha-icon>
-        <div class="dtext"><div class="dn1">${esc(r.name)}</div><div class="dn2">${status}</div></div>${g}${bw}</div>`;
+        <div class="dtext"><div class="dn1"><span>${esc(r.name)}</span>${tag}</div><div class="dn2">${status}</div></div>${g}${bw}</div>`;
     }).join("");
     const foot = a.checked && !live ? `<div class="foot">Checked ${clock(new Date(a.checked))} \u2022 tap Check to refresh</div>` : "";
     return `<ha-card class="group">${head}${body}${foot}</ha-card>`;
@@ -242,9 +246,10 @@ class ParentalControlsCard extends HTMLElement {
     // collapsible, like Devices: closed it shows a one-line summary; open it has the switch and the three times
     const on = this._hass.states[ids.bedtime]?.state === "on";
     const summary = on ? `${hhmm(a.bedtime_weeknight_start)} \u2013 ${hhmm(a.bedtime_end)}` : "Off";
-    const head = `<div class="dhead" id="btoggle"><span class="h">Bedtime${this._btOpen ? ` <ha-icon class="chev" icon="mdi:chevron-up"></ha-icon>` : ""}</span>
+    // chevron beside the title in both states (as on Devices), so opening never puts the On/Off switch under the tap
+    const head = `<div class="dhead" id="btoggle"><span class="h">Bedtime <ha-icon class="chev" icon="mdi:chevron-${this._btOpen ? "up" : "down"}"></ha-icon></span>
       ${this._btOpen ? `<button class="tog${on ? " on" : ""}" id="btsw" aria-pressed="${on}"><span>${on ? "On" : "Off"}</span><i class="sw"><i></i></i></button>`
-      : `<span class="hint">${summary} <ha-icon icon="mdi:chevron-down"></ha-icon></span>`}</div>`;
+      : `<span class="hint">${summary}</span>`}</div>`;
     if (!this._btOpen) return `<ha-card class="group">${head}</ha-card>`;
     return `<ha-card class="group">${head}${this._btRows(ids)}</ha-card>`;
   }
@@ -341,13 +346,14 @@ button.chip { cursor: pointer; }
 .drow.withb { grid-template-columns: 28px 1fr 34px 88px; }
 .drow.away { opacity: .65; }
 .kind { --mdc-icon-size: 20px; color: #9fa8da; }
-.dtext { min-width: 0; } .dn1 { font-size: 14px; } .dn2 { font-size: 12px; color: var(--secondary-text-color); }
+.dtext { min-width: 0; } .dn1 { font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.tag { font-size: 11px; padding: 1px 7px; border-radius: 8px; background: rgba(127,127,127,0.22); color: var(--secondary-text-color); white-space: nowrap; } .dn2 { font-size: 12px; color: var(--secondary-text-color); }
 .green { color: #81c784; } .red { color: #ef9a9a; }
 .bars { display: inline-flex; margin-left: 8px; align-items: flex-end; gap: 2px; height: 8px; }
 .bars i { display: block; width: 3px; border-radius: 1px; }
 .dglobe { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; --mdc-icon-size: 20px; }
 .bw { display: grid; grid-template-columns: auto 12px; column-gap: 4px; justify-content: end; font-size: 12.5px; line-height: 1.35; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.bw .dn { color: #90caf9; } .bw .up { color: #ce93d8; } .bw span:nth-child(even) { text-align: center; }
+.bw .dn { color: #90caf9; } .bw .up { color: #ce93d8; } .bw span:nth-child(odd) { text-align: right; } .bw span:nth-child(even) { text-align: center; }
 .msg { font-size: 13px; color: var(--secondary-text-color); padding: 8px 0; } .msg.err { color: #ef9a9a; }
 .tog { display: inline-flex; gap: 10px; align-items: center; font-size: 13px; color: var(--secondary-text-color); }
 .tog .sw { width: 40px; height: 22px; border-radius: 11px; background: rgba(127,127,127,0.35); position: relative; }

@@ -12,6 +12,7 @@ from pathlib import Path
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
@@ -28,7 +29,7 @@ from .devices import ChildDevices
 from .unifi import UniFiAuthError, UniFiClient, UniFiError, unifi_session
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
-PLATFORMS = [Platform.SENSOR, Platform.BUTTON, Platform.NUMBER, Platform.SWITCH, Platform.TIME]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.BUTTON, Platform.NUMBER, Platform.SWITCH, Platform.TIME]
 
 ParentalControlsConfigEntry = ConfigEntry[ChildController]
 
@@ -131,8 +132,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: ParentalControlsConfigEn
     ctl.devices = ChildDevices(hass, opts.get(CONF_ROUTER_GROUP), opts.get(CONF_DEVICES, {}), ctl.notify)
     await ctl.async_start()
     entry.runtime_data = ctl
+    _remove_unpicked(hass, entry, ctl.devices.configured)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload))
+    entry.async_create_background_task(hass, ctl.devices.async_load_members(), f"{DOMAIN} group members")
+    return True
+
+
+def _remove_unpicked(hass: HomeAssistant, entry: ConfigEntry, picked: dict) -> None:
+    """Devices removed in the child's Devices list go from Home Assistant too. Also drops the "<device> blocked"
+    switches of v0.4 and earlier, which the picked devices' own entities replaced."""
+    keep = {(DOMAIN, entry.entry_id)} | {(DOMAIN, f"{entry.entry_id}_{m}") for m in picked}
+    devreg = dr.async_get(hass)
+    for dev in dr.async_entries_for_config_entry(devreg, entry.entry_id):
+        if not dev.identifiers & keep:
+            devreg.async_update_device(dev.id, remove_config_entry_id=entry.entry_id)
+    entreg = er.async_get(hass)
+    for ent in er.async_entries_for_config_entry(entreg, entry.entry_id):
+        if ent.domain == "switch" and ent.unique_id.startswith(f"{entry.entry_id}_device_"):
+            entreg.async_remove(ent.entity_id)
+
+
+async def async_remove_config_entry_device(hass: HomeAssistant, entry: ConfigEntry, device: dr.DeviceEntry) -> bool:
+    """Delete on a picked device's page: take it off the child (the child's own device can't be deleted)."""
+    if entry.data.get(CONF_KIND) == KIND_ROUTER or (DOMAIN, entry.entry_id) in device.identifiers:
+        return False
+    prefix = f"{entry.entry_id}_"
+    macs = [i[1][len(prefix):] for i in device.identifiers if i[0] == DOMAIN and i[1].startswith(prefix)]
+    devices = dict({**entry.data, **entry.options}.get(CONF_DEVICES) or {})
+    if not macs or not any(m in devices for m in macs):
+        return True
+    for m in macs:
+        devices.pop(m, None)
+    hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_DEVICES: devices})
     return True
 
 

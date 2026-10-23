@@ -26,3 +26,33 @@ class ChildEntity(Entity):
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(self.ctl.add_listener(self.async_write_ha_state))
+
+
+class PickedDeviceEntity(Entity):
+    """An entity of a picked device: its own HA device, connected via the child's device. The MAC is the device's
+    serial number rather than a network connection, so it isn't merged with the router integration's own client
+    device."""
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+
+    def __init__(self, ctl: ChildController, mac: str, cfg: dict, key: str) -> None:
+        self.ctl = ctl
+        self.mac = mac
+        self.cfg = cfg
+        self._attr_translation_key = key
+        self._attr_unique_id = f"{ctl.entry_id}_{mac.replace(':', '')}_{key}"
+        self._attr_device_info = picked_device_info(ctl, mac, cfg)
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self.ctl.add_listener(self.async_write_ha_state))
+
+
+def picked_device_info(ctl: ChildController, mac: str, cfg: dict) -> DeviceInfo:
+    return DeviceInfo(
+        identifiers={(DOMAIN, f"{ctl.entry_id}_{mac}")},
+        name=cfg.get("name") or mac,
+        manufacturer="Parental Controls",
+        model="Picked device",
+        serial_number=mac,
+        via_device=(DOMAIN, ctl.entry_id),
+    )

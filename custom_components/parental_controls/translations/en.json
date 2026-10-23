@@ -10,7 +10,7 @@
       },
       "child": {
         "title": "Add a child",
-        "description": "Pick the switch that blocks this child's devices on your router (for UniFi, the switch for the child's group). On means blocked. If a router is connected, also pick the child's group so their devices can be listed.",
+        "description": "Pick the switch that blocks this child's devices on your router (for UniFi, the switch for the child's group). On means blocked. If a router is connected, also pick the child's group so their devices can be listed.{check}",
         "data": {
           "child_name": "Child's name",
           "block_entity": "Block switch",
@@ -18,18 +18,18 @@
         }
       },
       "router": {
-        "title": "Connect a router",
-        "description": "Pick your router. Used only to list devices, their status and speeds; blocking works through Home Assistant switches. More router types can be added later.",
+        "title": "Router type",
+        "description": "Which router runs your home network? The next step asks for its connection details. More router types later.",
         "data": {
-          "vendor": "Router"
+          "vendor": "Router type"
         }
       },
       "unifi": {
-        "title": "Connect a UniFi router",
-        "description": "Use a local UniFi admin with the View Only role. It is used only to list devices, their status and speeds; blocking works through Home Assistant switches and never needs this login.",
+        "title": "Router connection",
+        "description": "Use a local UniFi admin with the View Only role. It is used to list devices, their status and speeds, and to check which switch blocks what; blocking works through Home Assistant switches and never needs this login.",
         "data": {
-          "host": "Console address (e.g. 192.168.1.1)",
-          "username": "Username",
+          "host": "Address (IP or hostname)",
+          "username": "Username (view-only account)",
           "password": "Password"
         }
       },
@@ -39,16 +39,45 @@
         "data": {
           "site": "Site"
         }
+      },
+      "reconfigure": {
+        "title": "Router type",
+        "description": "Which router runs your home network? The next step asks for its connection details. More router types later.\n\nChanging the router type re-checks every child's group and device rules against the new router, and lists anything that no longer matches.",
+        "data": {
+          "vendor": "Router type"
+        }
+      },
+      "reconfigure_connection": {
+        "title": "Router connection",
+        "description": "Change how Home Assistant reaches your router. Leave the password empty to keep the current one. The new details are tested before they're saved.",
+        "data": {
+          "host": "Address (IP or hostname)",
+          "username": "Username (view-only account)",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in to your router again",
+        "description": "The router at {host} no longer accepts the saved login. Enter the view-only account's username and password.",
+        "data": {
+          "username": "Username (view-only account)",
+          "password": "Password"
+        }
       }
     },
     "error": {
       "switch_in_use": "Another child already uses this switch.",
-      "invalid_auth": "UniFi rejected the username or password.",
-      "cannot_connect": "Can't reach the UniFi console."
+      "invalid_auth": "The router rejected the username or password.",
+      "cannot_connect": "Can't reach the router.",
+      "switch_mismatch": "Your router says this switch doesn't block that group (see above). Submit again unchanged to keep it anyway."
     },
     "abort": {
       "already_configured": "This is already set up.",
-      "cannot_connect": "Can't reach the UniFi console."
+      "cannot_connect": "Can't reach the router.",
+      "child_use_configure": "To change a child, use Configure on the child instead.",
+      "reconfigure_successful": "Router connection saved.",
+      "reconfigure_mismatch": "Router saved. These no longer match the router's rules:\n{problems}",
+      "reauth_successful": "Signed in again."
     }
   },
   "options": {
@@ -58,11 +87,12 @@
         "menu_options": {
           "settings": "Block switch and router group",
           "add_devices": "Add devices",
-          "remove_devices": "Remove devices"
+          "devices": "Devices ({devices})"
         }
       },
       "settings": {
         "title": "Block switch and router group",
+        "description": "The router group is the child's group on your router; the block switch turns off internet for that group.{check}",
         "data": {
           "block_entity": "Block switch",
           "router_group": "Router group"
@@ -77,25 +107,21 @@
       },
       "pick": {
         "title": "Pick devices",
-        "description": "Pick the devices to show on this child's screen. A device outside the child's group is listed with its status; a device inside the group can be blocked on its own in the next step.",
-        "data": {
-          "picked": "Devices"
-        }
+        "description": "Found {count} devices for \u201c{pattern}\u201d. Tick the ones to show on {child}'s screen. Only devices in {child}'s group follow their Block, Pause and Bedtime; the rest show with status and statistics only.{notes}\n\nTo block one of the others on its own, your router needs a rule that turns off that device's internet. Home Assistant shows the rule as a switch, and the next step finds it.{router_help}"
       },
       "block": {
-        "title": "Per-device block (optional)",
-        "description": "For each device you can pick a switch that blocks just that device ({devices}). Leave it empty to only list the device."
+        "title": "Device blocking",
+        "description": "How {child}'s devices will be controlled:\n\n{devices}{found}{stats}"
       },
-      "remove_devices": {
-        "title": "Remove devices",
-        "data": {
-          "picked": "Devices to remove"
-        }
+      "devices": {
+        "title": "Devices",
+        "description": "Devices on {child}'s screen. Untick one to remove it from {child}'s screen and from Home Assistant."
       }
     },
     "error": {
       "no_match": "No devices match that search.",
-      "cannot_connect": "Can't reach the UniFi console."
+      "none_picked": "Tick at least one device.",
+      "cannot_connect": "Can't reach the router."
     },
     "abort": {
       "no_router": "Connect a router first: Add entry \u2192 Connect a router."
@@ -115,6 +141,9 @@
       },
       "devices": {
         "name": "Devices"
+      },
+      "blocking": {
+        "name": "Blocking"
       }
     },
     "button": {
@@ -142,9 +171,6 @@
       },
       "devices_live": {
         "name": "Live devices"
-      },
-      "device_blocked": {
-        "name": "{device} blocked"
       }
     },
     "time": {
@@ -156,6 +182,14 @@
       },
       "bedtime_end": {
         "name": "Bedtime end"
+      }
+    },
+    "binary_sensor": {
+      "online": {
+        "name": "Online"
+      },
+      "blocked": {
+        "name": "Blocked"
       }
     }
   },
@@ -217,7 +251,7 @@
     },
     "device_block_switch_missing": {
       "title": "Block switch for {device} ({child}) is {reason}",
-      "description": "The switch that blocks {device} on its own, `{entity}`, has been {reason} for a few minutes, so its block button on {child}'s card can't work.\n\nPick another one, or remove the device: **Settings \u2192 Devices & services \u2192 Parental Controls \u2192 {child} \u2192 Configure \u2192 Remove devices**, then add it again with a new switch. This notice clears by itself once the switch is back."
+      "description": "The switch that blocks {device} on its own, `{entity}`, has been {reason} for a few minutes, so its block button on {child}'s card can't work.\n\nPick another one, or clear it to keep the device for status and statistics only: **Settings \u2192 Devices & services \u2192 Parental Controls \u2192 {child} \u2192 Configure \u2192 Devices**, then Submit to reach Device blocking. This notice clears by itself once the switch is back."
     }
   }
 }

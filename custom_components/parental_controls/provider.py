@@ -24,6 +24,35 @@ class Client:
     ssid: Optional[str] = None
 
 
+@dataclass
+class BlockRule:
+    """A router rule that turns off internet, as seen behind one of Home Assistant's switches."""
+    name: str
+    groups: list[str]         # group names it targets (a group rule)
+    macs: list[str]           # device MACs it targets (a device rule)
+
+
+@dataclass(frozen=True)
+class RouterType:
+    """What the setup screens need to know about a kind of router. The help lines are optional: a router type
+    without them shows only the general sentence."""
+    key: str
+    label: str                       # in the router type list
+    name: str                        # "UniFi", as in "On your UniFi router"
+    integration: Optional[str]       # the HA integration whose switches turn this router's rules on and off
+    help_device: Optional[str] = None
+    help_group: Optional[str] = None  # may use {group}
+
+
+ROUTER_TYPES = {
+    "unifi": RouterType(
+        key="unifi", label="UniFi (UniFi OS console)", name="UniFi", integration="unifi",
+        help_device="Add a Policy Engine object for that device, set to No Internet.",
+        help_group="Add a Policy Engine object for the group {group}, set to No Internet."),
+}
+DEFAULT_ROUTER_TYPE = "unifi"   # router entries saved before the type was stored are UniFi
+
+
 class RouterProvider(Protocol):
     """Everything is async in the real integration; shown synchronous here for the spec."""
 
@@ -48,3 +77,8 @@ class RouterProvider(Protocol):
 
     def live_clients(self, macs: list[str]) -> list[Client]:
         """Current status and speeds for these devices, fetched on demand only (Devices card Check / Live)."""
+
+    def block_rules(self) -> dict[str, BlockRule]:
+        """Optional. The router's internet-off rules keyed by the unique_id of the Home Assistant switch that turns
+        each one on (in the integration named by RouterType.integration). Lets the setup confirm that a switch
+        blocks the child's group, or exactly one device. Providers without it get an unconfirmed switch picker."""

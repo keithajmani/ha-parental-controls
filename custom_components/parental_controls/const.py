@@ -9,8 +9,8 @@ CONF_BLOCK_ENTITY = "block_entity"     # the router's block switch for the child
 DEFAULT_PAUSE_MINUTES = 15
 MIN_PAUSE_MINUTES = 1
 MAX_PAUSE_MINUTES = 240
-TICK_SECONDS = 30
-SWITCH_GRACE = timedelta(minutes=5)          # a block switch must be missing/unavailable this long before a Repairs issue                      # bedtime starts/ends are applied within this many seconds
+TICK_SECONDS = 30                      # bedtime starts/ends are applied within this many seconds
+SWITCH_GRACE = timedelta(minutes=5)    # a block switch must be missing/unavailable this long before a Repairs issue
 
 STORAGE_VERSION = 1
 
@@ -23,11 +23,9 @@ CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_SITE = "site"
 CONF_ROUTER_GROUP = "router_group"     # the child's group on the router (its members are listed under Devices)
-CONF_DEVICES = "devices"               # {mac: {"name": str, "block_entity": str | None}} extra / controllable devices
+CONF_DEVICES = "devices"               # {mac: {"name": str, "block_entity": str | None, "confirmed": bool}} picked devices
 CONF_PATTERN = "pattern"
-CONF_PICKED = "picked"
 
 LIVE_INTERVAL = 5                      # seconds between refreshes while Live is on
 LIVE_TIMEOUT = 300                     # Live switches itself off after this many seconds
-CONF_VENDOR = "vendor"                 # router vendor; only "unifi" so far
-VENDORS = {"unifi": "UniFi (UniFi OS consoles: Cloud Gateway, Dream Machine, Dream Router, Cloud Key)"}
+CONF_VENDOR = "vendor"                 # router type (provider.ROUTER_TYPES); missing on old entries = UniFi

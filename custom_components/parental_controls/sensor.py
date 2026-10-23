@@ -6,12 +6,16 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
+from .const import CONF_DEVICES
 from .engine import State
-from .entity import ChildEntity
+from .entity import ChildEntity, PickedDeviceEntity
 
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities: AddEntitiesCallback) -> None:
-    async_add_entities([InternetSensor(entry.runtime_data), DevicesSensor(entry.runtime_data)])
+    ctl = entry.runtime_data
+    devices = {**entry.data, **entry.options}.get(CONF_DEVICES, {})
+    async_add_entities([InternetSensor(ctl), DevicesSensor(ctl)]
+                       + [DeviceBlocking(ctl, mac, cfg) for mac, cfg in devices.items()])
 
 
 class InternetSensor(ChildEntity, SensorEntity):
@@ -74,7 +78,22 @@ class DevicesSensor(ChildEntity, SensorEntity):
     @property
     def extra_state_attributes(self) -> dict:
         d = self.ctl.devices
+        # a device that follows the child reads Blocked whenever the child is (Block, Pause or Bedtime)
         rows = [{**r, "blocked": d.blocked(r) if r["block_entity"] else (r["in_group"] and self.ctl.status().router_blocked)}
                 for r in d.rows]
         return {"devices": rows, "checked": d.checked.isoformat() if d.checked else None, "error": d.error,
                 "live": d.live}
+
+
+class DeviceBlocking(PickedDeviceEntity, SensorEntity):
+    """How a picked device is controlled: follows the child (in the child's group), its own block rule, or status
+    and statistics only."""
+    _attr_icon = "mdi:shield-account-outline"
+
+    def __init__(self, ctl, mac: str, cfg: dict) -> None:
+        super().__init__(ctl, mac, cfg, "blocking")
+
+    @property
+    def native_value(self) -> str | None:
+        return {"own": "Own block rule", "group": f"Follows {self.ctl.name}",
+                "stats": "Status and statistics only"}.get(self.ctl.devices.control(self.mac))
