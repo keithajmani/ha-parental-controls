@@ -15,10 +15,12 @@ from typing import Callable
 from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import CALLBACK_TYPE, Context, Event, EventStateChangedData, HomeAssistant, callback
 from homeassistant.helpers.event import (
+    async_call_later,
     async_track_point_in_time,
     async_track_state_change_event,
     async_track_time_interval,
 )
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
@@ -27,6 +29,7 @@ from .const import DEFAULT_PAUSE_MINUTES, DOMAIN, STORAGE_VERSION, SWITCH_GRACE,
 from .engine import Kid, Status
 
 _LOGGER = logging.getLogger(__name__)
+REAPPLY_DELAY = 2   # seconds after a block switch appears or comes back before the child's status is put on it
 
 
 class ChildController:
@@ -136,8 +139,12 @@ class ChildController:
         ctx = Context()
         self._own_contexts.add(ctx.id)
         domain = self.block_entity.split(".", 1)[0]
-        await self.hass.services.async_call(domain, "turn_on" if want else "turn_off",
-                                            {"entity_id": self.block_entity}, blocking=True, context=ctx)
+        try:
+            await self.hass.services.async_call(domain, "turn_on" if want else "turn_off",
+                                                {"entity_id": self.block_entity}, blocking=True, context=ctx)
+        except HomeAssistantError as err:
+            self._own_contexts.discard(ctx.id)
+            _LOGGER.warning("%s: couldn't switch %s %s: %s", self.name, self.block_entity, "on" if want else "off", err)
 
     @callback
     def _schedule_override_end(self) -> None:
@@ -187,9 +194,18 @@ class ChildController:
             for cb in list(self._listeners):   # keeps "N min left" fresh on the status sensor
                 cb()
 
+    async def _on_reappear(self, _now: datetime) -> None:
+        await self._async_update()
+
     async def _on_switch_change(self, event: Event[EventStateChangedData]) -> None:
-        new = event.data["new_state"]
+        new, old = event.data["new_state"], event.data["old_state"]
         if new is None or new.state not in (STATE_ON, STATE_OFF):
+            return
+        if old is None or old.state not in (STATE_ON, STATE_OFF):
+            # The switch appeared (e.g. the router integration finished loading after us at startup) or came back from
+            # unavailable: that's not a person allowing or blocking, so put the child's current status back on it.
+            # A moment later, so the integration that owns the switch has its services registered by then.
+            async_call_later(self.hass, REAPPLY_DELAY, self._on_reappear)
             return
         if new.context.id in self._own_contexts:
             self._own_contexts.discard(new.context.id)

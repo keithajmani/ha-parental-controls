@@ -226,3 +226,32 @@ async def test_missing_block_switch_raises_a_repair_and_clears_it(hass, freezer)
     assert await async_setup_component(hass, "input_boolean", {"input_boolean": {"sam_block": {}}})
     freezer.tick(timedelta(seconds=31)); async_fire_time_changed(hass); await hass.async_block_till_done()
     assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None    # cleared once the switch is back
+
+
+async def test_a_switch_that_appears_after_a_restart_is_not_taken_as_allow(hass, freezer):
+    """Restart order: the child is blocked, the router integration loads after us, so the switch is missing at
+    setup and then appears as off. The child must stay blocked (switch turned back on), not be allowed."""
+    from homeassistant.helpers.storage import Store
+    entry = MockConfigEntry(domain=DOMAIN, title="Sam", unique_id="sam",
+                            data={"kind": "child", "child_name": "Sam", "block_entity": SW})
+    entry.add_to_hass(hass)
+    await Store(hass, 1, f"{DOMAIN}.{entry.entry_id}").async_save(
+        {"kid": {"name": "Sam", "manual_blocked": True}, "pause_minutes": 15})
+    assert await hass.config_entries.async_setup(entry.entry_id)     # switch doesn't exist yet
+    await hass.async_block_till_done()
+    assert hass.states.get(SENSOR).state == "blocked"
+    assert await async_setup_component(hass, "input_boolean", {"input_boolean": {"sam_block": {}}})   # appears, off
+    await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=3)); async_fire_time_changed(hass); await hass.async_block_till_done()
+    assert hass.states.get(SENSOR).state == "blocked"
+    assert hass.states.get(SW).state == "on"
+
+
+async def test_a_switch_back_from_unavailable_gets_the_childs_status(hass, freezer):
+    entry = await setup_child(hass)
+    await call(hass, "block", entry)
+    hass.states.async_set(SW, "unavailable"); await hass.async_block_till_done()
+    hass.states.async_set(SW, "off"); await hass.async_block_till_done()
+    freezer.tick(timedelta(seconds=3)); async_fire_time_changed(hass); await hass.async_block_till_done()
+    assert hass.states.get(SENSOR).state == "blocked"
+    assert hass.states.get(SW).state == "on"
