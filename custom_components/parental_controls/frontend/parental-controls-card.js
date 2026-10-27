@@ -313,7 +313,9 @@ class ParentalControlsCard extends HTMLElement {
     $("#dtoggle")?.addEventListener("click", (ev) => {
       if (ev.target.closest("button")) return;
       this._open = !this._open;
-      if (this._open) this._press("check_devices");
+      // opening turns Live on (its first refresh is immediate, and it still switches itself off after 5 minutes);
+      // without a Live switch it falls back to a single Check
+      if (this._open) ids.devices_live ? this._call("switch", "turn_on", { entity_id: ids.devices_live }) : this._press("check_devices");
       else if (this._hass.states[ids.devices_live]?.state === "on") this._call("switch", "turn_off", { entity_id: ids.devices_live });
       this._key = null; this._render();
     });

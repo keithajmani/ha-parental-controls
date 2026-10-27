@@ -70,15 +70,18 @@ These are the cases in `tests/test_engine.py`, taken from the behaviour of the c
 ## Devices (optional, router-specific)
 
 - The setup can search the router's known clients with a wildcard on name, hostname or MAC (e.g. `*kobo*`),
-  online or not, and shows each match's name, MAC, last seen and current group.
-- For each picked device the parent chooses the child and whether it gets its own block control.
+  online or not, and lists matches by name and last seen (no MACs on screen) under **Can be blocked** (in the
+  child's group, or with its own No Internet rule that has a switch in HA) or **Status & traffic only**.
+- Whether a device gets its own block control is read from the router's rules, not chosen: the integration matches
+  each picked device to a rule switch, and re-matches by itself when the router integration adds or removes one.
 - Two kinds, both kept:
   - **Extra device** (outside the group): listed on the child's screen; only its own control can block it.
   - **Group device with its own control**: block just that one device while the rest of the group stays online.
 - Precedence: the child's block always wins for group devices. A device control only adds a restriction; it
   cannot let a device through its child's block.
-- Device status (online, access point, signal, speeds) is fetched only when the parent opens the Devices view
-  or turns on Live, never continuously, and is not written to Home Assistant's history.
+- Device status (online, access point, signal, speeds) is fetched only while the Devices view is open (opening it
+  turns Live on, which refreshes every 5 s and stops by itself after 5 minutes) or on Check, never continuously,
+  and is not written to Home Assistant's history.
 
 ## Router providers
 
@@ -88,29 +91,29 @@ The rules know nothing about any router. A provider (`provider.py`) supplies:
 - block or allow a child's group; block or allow one device;
 - read the current block state, so changes made in the router's own app are noticed.
 
-UniFi is the first provider. Per-device blocks on UniFi need a per-device rule on the router. Stage 1 uses rules
-the parent creates in UniFi and picks from a list (read-only access). Creating those rules from Home Assistant
+UniFi is the first provider. Per-device blocks on UniFi need a per-device rule on the router. For now the parent
+creates those rules in UniFi and the integration finds them (read-only access). Creating those rules from Home Assistant
 needs a UniFi login with write access and is planned for later, behind the same interface.
 
-## What Home Assistant will show (Stage 1 onwards)
+## What Home Assistant shows
 
 Per child:
 
 | Entity | Purpose |
 |---|---|
 | `sensor.<child>_internet` | Online / Paused / Allowed for / Bedtime / Blocked, with `ends_at` and `then` attributes |
-| `button.<child>_block`, `button.<child>_allow` | The two status-card actions |
+| `button.<child>_block`, `button.<child>_allow`, `button.<child>_pause` | The status-card actions, and Pause for the set length |
 | `number.<child>_pause_minutes` | The Custom slider |
 | `switch.<child>_bedtime` and three `time` entities | Bedtime on/off and its times |
 | `sensor.<child>_devices` | Devices online at the last check; the list (status, AP, signal, speeds, block state) is an unrecorded attribute |
-| `button.<child>_check_devices`, `switch.<child>_live_devices` | Fetch now; refresh every 5 s, off by itself after 5 min |
-| `switch.<child>_<device>_blocked` | One per device that has its own block switch; mirrors that switch |
+| `button.<child>_check_devices`, `switch.<child>_live_devices` | Fetch now; refresh every 5 s, off by itself after 5 min (the card turns Live on when Devices is opened) |
+| Per picked device: `binary_sensor.<device>_online`, `sensor.<device>_blocking`, `binary_sensor.<device>_blocked` | Online at the last check; "Follows <child>" / "Own block rule" / "Status & traffic only"; Blocked only with its own rule (the card switches the router's rule directly) |
 
 Services: `parental_controls.block`, `.allow`, `.pause` (child, minutes), `.refresh_devices` (child).
 
 Entries: one "router" entry holds the UniFi console address and a view-only login; each child is its own entry. A child's options hold its block switch, router group and picked devices (`{mac: {name, block_entity}}`).
 
-One card, `custom:parental-controls-card` with `child: riley`, draws the status card with its Block/Allow button,
+One card, `custom:parental-controls-card` with `entity: sensor.riley_parental_controls_internet`, draws the status card with its Block/Allow button,
 the Pause section and the Devices list. Adding a child in the integration adds its entities; adding a tab is one
 card on a new view.
 

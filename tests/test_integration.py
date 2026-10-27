@@ -255,3 +255,21 @@ async def test_a_switch_back_from_unavailable_gets_the_childs_status(hass, freez
     freezer.tick(timedelta(seconds=3)); async_fire_time_changed(hass); await hass.async_block_till_done()
     assert hass.states.get(SENSOR).state == "blocked"
     assert hass.states.get(SW).state == "on"
+
+
+async def test_a_missing_switch_is_quiet_at_startup_and_warns_once_after_the_grace(hass, freezer, caplog):
+    """After a restart the router integration loads after us, so the switch is missing for a moment: no warning
+    then. Still missing after 5 minutes: one warning (with the Repairs issue), not one per tick."""
+    entry = MockConfigEntry(domain=DOMAIN, title="Sam", unique_id="sam",
+                            data={"kind": "child", "child_name": "Sam", "block_entity": SW})
+    entry.add_to_hass(hass)
+    caplog.set_level("WARNING", logger="custom_components.parental_controls")
+    assert await hass.config_entries.async_setup(entry.entry_id)     # switch doesn't exist yet
+    await hass.async_block_till_done()
+    await call(hass, "block", entry)                                  # an apply while it's missing
+    freezer.tick(timedelta(minutes=1)); async_fire_time_changed(hass); await hass.async_block_till_done()
+    assert not [r for r in caplog.records if r.levelname == "WARNING" and SW in r.getMessage()]
+    for _ in range(14):
+        freezer.tick(timedelta(seconds=30)); async_fire_time_changed(hass); await hass.async_block_till_done()
+    warned = [r for r in caplog.records if r.levelname == "WARNING" and SW in r.getMessage()]
+    assert len(warned) == 1 and "missing for 5 minutes" in warned[0].getMessage()

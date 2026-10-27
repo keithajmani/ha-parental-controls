@@ -47,6 +47,7 @@ class ChildController:
         self._own_contexts: set[str] = set()
         self._last: tuple | None = None
         self._bad_since: dict[str, datetime] = {}   # switch entity -> when it was first seen missing / unavailable
+        self._warned: set[str] = set()               # switch entities already logged as missing past SWITCH_GRACE
         self.devices = None   # ChildDevices, set by __init__   # (status, saved state) after the last update, to spot changes on a tick
 
     # ---- lifecycle ----------------------------------------------------------------------------------
@@ -131,8 +132,10 @@ class ChildController:
         want = self.kid.status(now).router_blocked
         st = self.hass.states.get(self.block_entity)
         if st is None or st.state not in (STATE_ON, STATE_OFF):
-            _LOGGER.warning("%s: block switch %s is %s; not changing it", self.name, self.block_entity,
-                            st.state if st else "missing")
+            # usual for a moment after a restart (the router integration loads after us); the status goes on the
+            # switch when it appears, and _check_switches warns if it's still missing after SWITCH_GRACE
+            _LOGGER.debug("%s: block switch %s is %s; not changing it", self.name, self.block_entity,
+                          st.state if st else "missing")
             return
         if (st.state == STATE_ON) == want:
             return
@@ -174,10 +177,15 @@ class ChildController:
             reason = "missing" if st is None else ("unavailable" if st.state in ("unavailable", "unknown") else None)
             if reason is None:
                 self._bad_since.pop(entity, None)
+                self._warned.discard(entity)
                 ir.async_delete_issue(self.hass, DOMAIN, issue_id)
                 continue
             since = self._bad_since.setdefault(entity, now)
             if now - since >= SWITCH_GRACE:
+                if entity not in self._warned:
+                    self._warned.add(entity)
+                    _LOGGER.warning("%s: block switch %s has been %s for %d minutes", self.name, entity, reason,
+                                    SWITCH_GRACE.total_seconds() // 60)
                 ir.async_create_issue(self.hass, DOMAIN, issue_id, is_fixable=False, severity=ir.IssueSeverity.WARNING,
                                       translation_key=key, translation_placeholders={
                                           "child": self.name, "entity": entity, "reason": reason, "device": device or ""})

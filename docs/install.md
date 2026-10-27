@@ -1,6 +1,6 @@
 # Installing Parental Controls
 
-Status: Stage 3 (core control, device lists, dashboard card), v0.5.7. Installable as a HACS custom repository.
+Status: Stage 3 (core control, device lists, dashboard card), v0.5.8. Installable as a HACS custom repository.
 
 ## Requirements
 
@@ -23,7 +23,7 @@ Status: Stage 3 (core control, device lists, dashboard card), v0.5.7. Installabl
 2. Find "Parental Controls" in HACS → Download → restart Home Assistant.
 3. Continue from step 3 of the manual install below.
 
-## Manual install (Stage 1, for testing)
+## Manual install
 
 1. Copy the folder `custom_components/parental_controls` from this repo into your Home Assistant config folder as
    `/config/custom_components/parental_controls` (for example by dragging it into Studio Code Server or Samba).
@@ -33,8 +33,8 @@ Status: Stage 3 (core control, device lists, dashboard card), v0.5.7. Installabl
 4. Settings → Devices & services → Add integration → Parental Controls. Enter the child's name and pick the block
    switch (the test toggle, or the router's switch for the child's group).
 5. The child appears as a device "<Child> Parental Controls" with its status sensor, Block / Allow / Pause buttons,
-   pause length, bedtime switch and bedtime times. The card comes in Stage 3; until then use the entities or the
-   `parental_controls.block`, `.allow` and `.pause` actions.
+   pause length, bedtime switch and bedtime times. Add the card to a dashboard ([The card](#the-card)), or use the
+   entities or the `parental_controls.block`, `.allow` and `.pause` actions directly.
 
 ### Device lists (optional, UniFi)
 
@@ -47,8 +47,11 @@ Status: Stage 3 (core control, device lists, dashboard card), v0.5.7. Installabl
    router doesn't confirm (a test toggle, say), submit again unchanged. The same check runs when you add a child.
 8. Configure → **Add devices**: search (e.g. `*kobo*`) and tick devices. Results are listed under two headings,
    **Can be blocked** and **Status & traffic only** (see [How devices are controlled](#how-devices-are-controlled)).
+   Each line shows the device's name, online or offline, and why it's under its heading. MAC addresses are left out,
+   except to tell apart two devices with the same name.
    Nothing is ticked to start with, and a device may be picked by two children. A device's own block switch is found
-   on the router and saved with it; there's nothing more to choose.
+   on the router and saved with it; there's nothing more to choose. The **?** at the top of these setup screens opens
+   [How devices are controlled](#how-devices-are-controlled) below.
 
    For a router type that can't say what a switch's rule targets, a **Device blocking** step follows instead, with a
    picker limited to that router integration's switches, marked "not confirmed".
@@ -62,6 +65,8 @@ Status: Stage 3 (core control, device lists, dashboard card), v0.5.7. Installabl
    down or on an older version. Submitting Configure → Devices does it by hand.
 
 ### How devices are controlled
+
+(This is the page the **?** at the top of the setup screens opens.)
 
 When you pick devices, each one lands under one of two headings, and its line says why:
 
@@ -106,8 +111,8 @@ shows a **Re-authenticate** prompt for it. Router entries from before v0.5 have 
 If a child's block switch (or a device's own block switch) goes missing or unavailable for 5 minutes, Home Assistant
 shows a notice under **Settings → Repairs** explaining what to fix; it clears itself when the switch is back.
 
-Device status is fetched only when asked (Check devices, or Live for up to 5 minutes) and the device list is not
-written to Home Assistant's history.
+Device status is fetched only when asked (opening Devices on the card, which turns Live on for up to 5 minutes, or
+Check) and the device list is not written to Home Assistant's history.
 
 ### The card
 
@@ -125,12 +130,19 @@ entity: sensor.riley_parental_controls_internet   # the child's Internet sensor
 ```
 
 One card per child, typically one dashboard view (tab) per child. The card shows the status with a Block / Allow
-button, Pause (or Allow for, when blocked) with 15 / 30 / 60 and a Custom slider, and Devices (tap the heading or its arrow to open or close;
-opening it runs a check; Live refreshes every 5 s). Devices in the child's group read red **Blocked** whenever the
-child is blocked (Block, Pause or Bedtime); devices outside it keep their real state; a device that isn't connected
-reads **Offline** with when it was last seen. A device's row changes as soon as the router confirms a tap (about a second); if it doesn't within
-10 seconds, a short message says so and what is still true. A device with its own block rule gets a
-block / allow button.
+button, Pause (or Allow for, when blocked) with 15 / 30 / 60 and a Custom slider, and Devices.
+
+Devices is closed to start with; tap the heading or its arrow to open or close it. Opening it turns **Live** on: the
+list refreshes every 5 s and Live switches itself off after 5 minutes (or when you close Devices, or tap Live).
+After that the list stays as it was, with "Checked <time>" underneath; tap **Check** for one more refresh, or Live
+again. Each row shows the device's status, access point and signal, and its download and upload speeds.
+
+Devices in the child's group read red **Blocked** whenever the child is blocked (Block, Pause or Bedtime); devices
+outside it keep their real state; a device that isn't connected reads **Offline** with when it was last seen. A device
+with its own block rule gets a block / allow button. Its row turns red (or back) as soon as the router confirms a tap,
+usually within a second, with no spinner in between; a second tap while it waits is ignored. If the router doesn't
+confirm within 10 seconds, a short message says so and what is still true ("It's still online.").
+
 Tap the Bedtime pill in the status box (the one with the small arrow) to change that child's bedtime: on/off and the
 three times, in a pop-up. After an update, refresh the browser (or the app) once so it loads the new card.
 
@@ -147,15 +159,6 @@ One card for the whole household: per child, Bedtime on/off and the three times 
 Back on at) with - / + buttons. The same settings stay available on each child's device page.
 
 To remove: delete the integration entries, then the folder, then restart.
-
-## Steps once it's in HACS (planned)
-
-1. HACS → Integrations → Custom repositories → add the GitHub URL → install "Parental Controls" → restart.
-2. Settings → Devices & services → Add integration → Parental Controls.
-3. Pick the router and sign in with the view-only account.
-4. Add a child: name, router group, optional bedtime times.
-5. Optional: search devices (e.g. `*kobo*`), pick them, choose the child and whether each gets its own block control.
-6. Add the card to a dashboard view: `type: custom:parental-controls-card`, `child: riley`. One view per child.
 
 ## Removing it
 

@@ -6,11 +6,11 @@ Optional per-device controls and device status (UniFi first).
 > **Early draft — not ready for general use.** Stage 3 of 4: core control, device lists and the dashboard card work
 > and are tested, but the setup may still change without a migration path.
 
-Status: **Stage 3, v0.5.7** — per-child block / pause / allow-for / bedtime, UniFi device lists with per-device blocks found from the router's own rules, and a dashboard card (`custom:parental-controls-card`).
+Status: **Stage 3, v0.5.8** — per-child block / pause / allow-for / bedtime, UniFi device lists with per-device blocks found from the router's own rules, and a dashboard card (`custom:parental-controls-card`).
 Install by hand or as a HACS custom repository: see [docs/install.md](docs/install.md).
 
 - Design: [docs/design.md](docs/design.md)
-- Install (planned): [docs/install.md](docs/install.md)
+- Install and use: [docs/install.md](docs/install.md)
 - Rules engine: `custom_components/parental_controls/engine.py` (pure Python, no Home Assistant imports)
 - Router interface: `custom_components/parental_controls/provider.py`
 
