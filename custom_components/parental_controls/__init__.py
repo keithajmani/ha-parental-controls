@@ -43,38 +43,42 @@ PAUSE_SCHEMA = CHILD_SCHEMA.extend(
 
 _LOGGER = logging.getLogger(__name__)
 CARD_URL = "/parental_controls/parental-controls-card.js"
+NEXTDNS_CARD_URL = "/parental_controls/nextdns-apps-card.js"
+CARD_URLS = (CARD_URL, NEXTDNS_CARD_URL)   # the router cards, and the NextDNS apps card in a file of its own
 
 
 async def _async_register_card(hass: HomeAssistant) -> None:
-    """Serve the dashboard card from the integration and add it as a dashboard resource, so nobody has to.
+    """Serve the dashboard cards from the integration and add each file as a dashboard resource, so nobody has to.
 
-    It is registered as a normal Lovelace resource (like a HACS card) rather than an early-loaded frontend module:
+    They are registered as normal Lovelace resources (like a HACS card) rather than early-loaded frontend modules:
     a module that loads before the dashboard's element registry is ready ends up invisible to the dashboard.
     """
     from homeassistant.components.http import StaticPathConfig
     from homeassistant.loader import async_get_integration
 
     version = (await async_get_integration(hass, DOMAIN)).version
-    path = Path(__file__).parent / "frontend" / "parental-controls-card.js"
-    await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(path), True)])
-    url = f"{CARD_URL}?v={version}"
+    folder = Path(__file__).parent / "frontend"
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(u, str(folder / u.rsplit("/", 1)[1]), True) for u in CARD_URLS])
 
     async def add_resource(_event=None) -> None:
         lovelace = hass.data.get("lovelace")
         resources = getattr(lovelace, "resources", None)
         if resources is None or not hasattr(resources, "async_create_item"):
-            # dashboards in YAML mode: the resource has to be added by hand (see docs/install.md)
-            _LOGGER.info("Parental Controls: add %s as a dashboard resource (type: module)", url)
+            # dashboards in YAML mode: the resources have to be added by hand (see docs/install.md)
+            for u in CARD_URLS:
+                _LOGGER.info("Parental Controls: add %s?v=%s as a dashboard resource (type: module)", u, version)
             return
         if not resources.loaded:
             await resources.async_load()
             resources.loaded = True
-        for item in resources.async_items():
-            if item.get("url", "").split("?")[0] == CARD_URL:
-                if item["url"] != url:   # new version: bump the URL so browsers fetch the new card
-                    await resources.async_update_item(item["id"], {"res_type": "module", "url": url})
-                return
-        await resources.async_create_item({"res_type": "module", "url": url})
+        for base in CARD_URLS:
+            url = f"{base}?v={version}"
+            item = next((i for i in resources.async_items() if i.get("url", "").split("?")[0] == base), None)
+            if item is None:
+                await resources.async_create_item({"res_type": "module", "url": url})
+            elif item["url"] != url:   # new version: bump the URL so browsers fetch the new card
+                await resources.async_update_item(item["id"], {"res_type": "module", "url": url})
 
     if hass.data.get("lovelace") is not None:
         await add_resource()

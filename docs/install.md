@@ -1,6 +1,6 @@
 # Installing Parental Controls
 
-Status: Stage 3 (core control, device lists, dashboard card), v0.6.1. Installable as a HACS custom repository.
+Status: Stage 3 (core control, device lists, dashboard card), v0.6.2. Installable as a HACS custom repository.
 
 ## Requirements
 
@@ -118,7 +118,7 @@ Check) and the device list is not written to Home Assistant's history.
 
 The integration serves its own card and adds it to the dashboard resources automatically (and updates the entry on each
 version). Only if your dashboards are in YAML mode, add `/parental_controls/parental-controls-card.js` as a resource of
-type module yourself. Edit a dashboard → Add card → search
+type module yourself (and `/parental_controls/nextdns-apps-card.js` for the NextDNS apps card). Edit a dashboard → Add card → search
 "Parental Controls", pick the child, or in YAML:
 
 ```yaml

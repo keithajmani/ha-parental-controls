@@ -121,7 +121,8 @@ card on a new view.
 
 `custom:parental-controls-apps-card` (optional) shows one NextDNS profile's app and category switches, found through
 the entity registry (platform `nextdns`, the profile's device, translation key `block_<app>`), grouped by a table in
-the card. Tap toggles the switch. Details: [nextdns-card.md](nextdns-card.md).
+the card. Tap toggles the switch. It lives in its own file, `frontend/nextdns-apps-card.js`, served and registered
+like the router cards' file. Details: [nextdns-card.md](nextdns-card.md).
 
 ## Stages
 

@@ -163,6 +163,9 @@ async def test_card_is_served(hass, hass_client):
     r = await client.get("/parental_controls/parental-controls-card.js")
     assert r.status == 200
     assert "customElements.define(\"parental-controls-card\"" in await r.text()
+    r = await client.get("/parental_controls/nextdns-apps-card.js")
+    assert r.status == 200
+    assert 'define("parental-controls-apps-card"' in await r.text()
 
 
 
@@ -172,10 +175,11 @@ async def test_card_is_added_as_a_dashboard_resource_once(hass):
     res = hass.data["lovelace"].resources
     urls = [i["url"] for i in res.async_items()]
     assert any(u.startswith("/parental_controls/parental-controls-card.js?v=") for u in urls)
+    assert any(u.startswith("/parental_controls/nextdns-apps-card.js?v=") for u in urls)
     # reloading the integration must not add it twice
     await hass.config_entries.async_reload(hass.config_entries.async_entries("parental_controls")[0].entry_id)
     await hass.async_block_till_done()
-    assert sum(u.startswith("/parental_controls/") for u in [i["url"] for i in res.async_items()]) == 1
+    assert sum(u.startswith("/parental_controls/") for u in [i["url"] for i in res.async_items()]) == 2
 
 
 def test_brand_icons_ship_inside_the_integration():
@@ -202,12 +206,13 @@ def test_brand_icons_ship_inside_the_integration():
     assert 'stroke="#9FA8DA" stroke-width="8"' in light and 'stroke="#FFFFFF" stroke-width="8"' in dark
 
 
-def test_card_file_is_ascii_and_defines_both_cards():
+def test_card_files_are_ascii_and_each_defines_its_own_cards():
     from pathlib import Path
-    js = (Path(__file__).parent.parent / "custom_components/parental_controls/frontend/parental-controls-card.js").read_text()
-    assert js.isascii()                       # reads the same whatever charset it is served with
+    front = Path(__file__).parent.parent / "custom_components/parental_controls/frontend"
+    js, apps = (front / "parental-controls-card.js").read_text(), (front / "nextdns-apps-card.js").read_text()
+    assert js.isascii() and apps.isascii()    # reads the same whatever charset it is served with
     assert 'define("parental-controls-card"' in js and 'define("parental-controls-settings-card"' in js
-    assert 'define("parental-controls-apps-card"' in js
+    assert 'define("parental-controls-apps-card"' in apps and "apps-card" not in js
 
 
 def test_apps_card_knows_every_nextdns_app_and_category():
@@ -215,7 +220,7 @@ def test_apps_card_knows_every_nextdns_app_and_category():
     two share a name. Ids from the NextDNS integration's switch list (HA 2026.10)."""
     import re
     from pathlib import Path
-    js = (Path(__file__).parent.parent / "custom_components/parental_controls/frontend/parental-controls-card.js").read_text()
+    js = (Path(__file__).parent.parent / "custom_components/parental_controls/frontend/nextdns-apps-card.js").read_text()
     table = js[js.index("const APPS = {"):js.index("};", js.index("const APPS = {"))]
     ids = set(re.findall(r'(?:^|,)\s*"?([a-z0-9_]+)"?: \["', table, re.M))
     nextdns = """9gag amazon bereal blizzard chatgpt dailymotion discord disneyplus ebay facebook fortnite google_chat hbomax
@@ -239,7 +244,7 @@ async def test_apps_card_only_entry_serves_the_card_and_nothing_else(hass, hass_
     assert entry.state.value == "loaded"
     assert not [s for s in hass.states.async_all() if "parental_controls" in s.entity_id]
     client = await hass_client()
-    resp = await client.get("/parental_controls/parental-controls-card.js")
+    resp = await client.get("/parental_controls/nextdns-apps-card.js")
     assert resp.status == 200 and 'define("parental-controls-apps-card"' in await resp.text()
     # only one such entry
     r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})

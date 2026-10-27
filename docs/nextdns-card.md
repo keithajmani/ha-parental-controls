@@ -30,6 +30,9 @@ untick something, the card keeps the list you picked, and apps you turn on later
 The Parental Controls integration's own settings (Settings → Devices & services → Parental Controls) have nothing
 for this card.
 
+The card is its own file, `/parental_controls/nextdns-apps-card.js`, which the integration adds to your dashboard
+resources by itself. Only with dashboards in YAML mode, add it yourself as a resource of type module.
+
 ## Turn on the apps you want
 
 The NextDNS integration makes one switch per app and category for each profile, and **Home Assistant turns all of
