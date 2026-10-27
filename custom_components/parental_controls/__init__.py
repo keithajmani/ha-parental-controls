@@ -11,10 +11,11 @@ from pathlib import Path
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers.event import async_call_later
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
@@ -136,7 +137,76 @@ async def async_setup_entry(hass: HomeAssistant, entry: ParentalControlsConfigEn
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     entry.async_create_background_task(hass, ctl.devices.async_load_members(), f"{DOMAIN} group members")
+    _watch_router_switches(hass, entry)
     return True
+
+
+SYNC_DELAY = 10   # seconds of quiet after the router integration's switches change before rules are re-read
+STARTUP_SYNC_DELAY = 60   # seconds after a child loads before its devices' own rules are checked once
+
+
+@callback
+def _watch_router_switches(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Auto-detect: when the router integration adds, removes, enables or disables a switch, re-read the router's
+    rules and attach or detach each picked device's own block switch, so it moves between "Can be blocked" and
+    "Status & traffic only" without opening Configure. Bursts (e.g. the router integration reloading) are waited out.
+    Only the child's saved options change; no switch is ever turned on or off."""
+    pending: list = []
+
+    @callback
+    def relevant(data) -> bool:
+        if not data["entity_id"].startswith("switch."):
+            return False
+        if data["action"] == "update" and "disabled_by" not in data.get("changes", {}):
+            return False
+        return True
+
+    async def sync(_now=None) -> None:
+        pending.clear()
+        await async_sync_device_switches(hass, entry)
+
+    @callback
+    def changed(event) -> None:
+        if pending:
+            pending.pop()()           # cancel the earlier timer: restart the quiet period
+        pending.append(async_call_later(hass, SYNC_DELAY, sync))
+
+    entry.async_on_unload(hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, changed, event_filter=relevant))
+    # once after loading too, for rules (and switches) made while Home Assistant was down or on an older version;
+    # later than the debounce, so the router entry has logged in by then
+    pending.append(async_call_later(hass, STARTUP_SYNC_DELAY, sync))
+    entry.async_on_unload(lambda: pending and pending.pop()())
+
+
+async def async_sync_device_switches(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Match each picked device's own block switch against the router's rules now. Devices whose switch was picked by
+    hand for a router that can't tell (confirmed False, with a switch) are left alone. True when something changed."""
+    from homeassistant.helpers import issue_registry as ir
+    from .rules import device_switches, switch_rules
+    rules = await switch_rules(hass, fresh=True)   # a switch just appeared: the rule behind it is new too
+    if rules is None or entry.state is not ConfigEntryState.LOADED:
+        return False
+    devices = dict({**entry.data, **entry.options}.get(CONF_DEVICES) or {})
+    changed = False
+    for mac, d in devices.items():
+        if d.get("block_entity") and not d.get("confirmed"):
+            continue
+        found = device_switches(rules, mac)
+        new = found[0] if found else None
+        if new == d.get("block_entity"):
+            continue
+        name = d.get("name") or mac
+        if new:
+            _LOGGER.info("Parental Controls: %s on %s now has its own block switch %s", name, entry.title, new)
+        else:
+            _LOGGER.info("Parental Controls: %s on %s no longer has its own block switch (was %s); status and traffic "
+                         "only", name, entry.title, d.get("block_entity"))
+            ir.async_delete_issue(hass, DOMAIN, f"{entry.entry_id}_device_{mac.replace(':', '')}")
+        devices[mac] = {**d, "block_entity": new, "confirmed": bool(new)}
+        changed = True
+    if changed:
+        hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_DEVICES: devices})
+    return changed
 
 
 def _remove_unpicked(hass: HomeAssistant, entry: ConfigEntry, picked: dict) -> None:

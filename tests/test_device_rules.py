@@ -54,13 +54,14 @@ async def test_pick_lists_can_be_blocked_and_status_only_with_nothing_ticked(has
     for key in fields(r).values():
         assert key.default() == []                       # nothing pre-selected
     assert options_of(r, "Can be blocked") == [         # the router's order: online first, then by name
-        (IPAD, f"Sam's iPad · online · {IPAD} · Sam's group"),
-        (SPEAKER, f"Den speaker · offline · {SPEAKER} · own block rule"),
-        (LAPTOP, f"Sam's laptop · offline · {LAPTOP} · Sam's group")]
+        (IPAD, "Sam's iPad · online · Sam's group"),
+        (SPEAKER, "Den speaker · offline · own block rule"),
+        (LAPTOP, "Sam's laptop · offline · Sam's group")]
     # another child's group, and no group at all: neither can be blocked from Sam's screen
     assert sorted(options_of(r, "Status & traffic only")) == sorted([
-        (KOBO, f"kobo · offline · {KOBO}"), (RILEY_KOBO, f"Riley's Kobo · offline · {RILEY_KOBO}")])
-    assert r["description_placeholders"] == {"count": "5", "pattern": "*", "child": SAM}
+        (KOBO, "kobo · offline"), (RILEY_KOBO, "Riley's Kobo · offline")])
+    p = r["description_placeholders"]
+    assert (p["count"], p["pattern"], p["child"]) == ("5", "*", SAM)
 
 
 async def test_a_rule_without_a_switch_in_ha_says_so(hass, unifi):
@@ -70,7 +71,7 @@ async def test_a_rule_without_a_switch_in_ha_says_so(hass, unifi):
     r = await open_options(hass, entry, "add_devices")
     r = await hass.config_entries.options.async_configure(r["flow_id"], {"pattern": "speaker"})
     assert options_of(r, "Status & traffic only") == [
-        (SPEAKER, f"Den speaker · offline · {SPEAKER} · rule has no switch in HA")]
+        (SPEAKER, "Den speaker · offline · rule has no switch in HA")]
 
 
 async def test_only_internet_off_rules_for_that_one_device_count(hass, unifi):
@@ -222,10 +223,9 @@ async def test_devices_list_uses_the_same_headings_and_untick_removes(hass, unif
     r = await open_options(hass, entry, "devices")
     assert list(fields(r)) == ["Can be blocked", "Status & traffic only"]
     assert fields(r)["Can be blocked"].default() == [IPAD, SPEAKER]          # all ticked to start with
-    assert options_of(r, "Can be blocked") == [(IPAD, f"Sam's iPad · online · {IPAD} · Sam's group"),
-                                               (SPEAKER, f"Den speaker · offline · {SPEAKER} · own block rule")]
-    assert options_of(r, "Status & traffic only") == [(KOBO, f"kobo · offline · {KOBO}"),
-                                                      (RILEY_KOBO, f"Riley's Kobo · offline · {RILEY_KOBO}")]
+    assert options_of(r, "Can be blocked") == [(IPAD, "Sam's iPad · online · Sam's group"),
+                                               (SPEAKER, "Den speaker · offline · own block rule")]
+    assert options_of(r, "Status & traffic only") == [(KOBO, "kobo · offline"), (RILEY_KOBO, "Riley's Kobo · offline")]
     r = await hass.config_entries.options.async_configure(r["flow_id"], {
         "Can be blocked": [IPAD, SPEAKER], "Status & traffic only": [RILEY_KOBO]})
     assert r["type"] == "create_entry"
@@ -391,3 +391,152 @@ async def test_unifi_reads_only_internet_off_objects(hass, unifi):
     assert rules["object_oriented_network_config-o1"].groups == ["Sam"]
     assert rules["object_oriented_network_config-o3"].macs == [SPEAKER] and not rules[
         "object_oriented_network_config-o3"].groups
+
+
+def test_a_mac_is_shown_only_to_tell_same_named_devices_apart():
+    from custom_components.parental_controls.config_flow import _duplicate_names
+    assert _duplicate_names({"a": "Kobo", "b": "kobo ", "c": "iPad"}) == {"a", "b"}
+
+
+# ---- every screen supplies the placeholders its text uses -----------------------------------------------
+def _needed(section: str, step: str, key: str = "description") -> set[str]:
+    import json
+    import re
+    from pathlib import Path
+    strings = json.loads((Path(__file__).parent.parent / "custom_components/parental_controls/strings.json").read_text())
+    text = strings[section]["step"][step].get(key, "")
+    if isinstance(text, dict):
+        text = " ".join(text.values())
+    return set(re.findall(r"{(\w+)}", text))
+
+
+def _supplied(r) -> set[str]:
+    return set(r.get("description_placeholders") or {})
+
+
+async def test_every_screen_supplies_the_placeholders_its_text_uses(hass, aioclient_mock, unifi):
+    """A text that uses {x} which the screen doesn't send shows as a translation error in the browser."""
+    entry = await setup(hass)
+    seen = []
+
+    def check(r, section):
+        if r.get("type") in ("form", "menu"):
+            key = "menu_options" if r["type"] == "menu" else "description"
+            missing = _needed(section, r["step_id"], key) - _supplied(r)
+            assert not missing, f"{section}.{r['step_id']} doesn't supply {missing}"
+            seen.append(r["step_id"])
+
+    r = await hass.config_entries.options.async_init(entry.entry_id); check(r, "options")
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"next_step_id": "settings"}); check(r, "options")
+    r = await open_options(hass, entry, "add_devices"); check(r, "options")
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"pattern": "*"}); check(r, "options")
+    r = await open_options(hass, entry, "devices"); check(r, "options")
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"}); check(r, "config")
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "child"}); check(r, "config")
+    router = hass.config_entries.async_entries(DOMAIN)[0]
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "reconfigure", "entry_id": router.entry_id})
+    check(r, "config")
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"vendor": "unifi"}); check(r, "config")
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "reauth", "entry_id": router.entry_id},
+                                                  data=router.data)
+    check(r, "config")
+    # the Device blocking step: only for a router that can't read its rules
+    from .test_devices import DEVICES, GROUPS, STA, USERS
+    aioclient_mock.clear_requests()
+    aioclient_mock.post(f"{U}/api/auth/login", json={}, headers={"X-CSRF-Token": "t"})
+    aioclient_mock.get(f"{NET}/v2/api/site/default/network-members-groups", json=GROUPS)
+    aioclient_mock.get(f"{NET}/api/s/default/rest/user", json={"data": USERS})
+    aioclient_mock.get(f"{NET}/api/s/default/stat/device", json={"data": DEVICES})
+    aioclient_mock.get(f"{NET}/api/s/default/stat/sta", json={"data": STA})
+    aioclient_mock.get(f"{NET}/v2/api/site/default/object-oriented-network-configs", status=404)
+    router.runtime_data._rules = (0.0, {})
+    r = await pick(hass, entry, "kobo", [KOBO]); check(r, "options")
+    assert {"init", "settings", "add_devices", "pick", "devices", "user", "child", "reconfigure",
+            "reconfigure_connection", "reauth_confirm", "block"} <= set(seen)
+
+
+# ---- auto-detect: router switches appearing, disappearing or being disabled ----------------------------
+async def _quiet(hass, freezer, seconds=11):
+    from datetime import timedelta
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+    freezer.tick(timedelta(seconds=seconds)); async_fire_time_changed(hass); await hass.async_block_till_done()
+
+
+async def test_a_new_switch_for_a_device_rule_is_attached_by_itself(hass, unifi, freezer):
+    await add_router(hass)
+    entry = await add_child(hass)                       # no UniFi switches in HA yet
+    await pick_all(hass, entry, [SPEAKER])
+    assert entry.options["devices"][SPEAKER]["block_entity"] is None          # status & traffic only
+    unifi_switches(hass)                                # the UniFi integration adds its switches
+    await hass.async_block_till_done()
+    assert entry.options["devices"][SPEAKER]["block_entity"] is None          # waits for things to settle
+    await _quiet(hass, freezer)
+    assert entry.options["devices"][SPEAKER] == {"name": "Den speaker", "block_entity": "switch.unifi_speaker_block",
+                                                 "confirmed": True}
+    assert hass.states.get("binary_sensor.den_speaker_blocked") is not None   # reloaded with its Blocked sensor
+    assert hass.states.get("switch.unifi_speaker_block").state == "off"       # the switch itself untouched
+
+
+async def test_a_removed_or_disabled_switch_is_detached_by_itself(hass, unifi, freezer):
+    from homeassistant.helpers import issue_registry as ir
+    entry = await setup(hass)
+    await pick_all(hass, entry, [SPEAKER])
+    assert entry.options["devices"][SPEAKER]["block_entity"] == "switch.unifi_speaker_block"
+    ir.async_create_issue(hass, DOMAIN, f"{entry.entry_id}_device_cccccccccc01", is_fixable=False,
+                          severity=ir.IssueSeverity.WARNING, translation_key="device_block_switch_missing")
+    er.async_get(hass).async_update_entity("switch.unifi_speaker_block", disabled_by=er.RegistryEntryDisabler.USER)
+    await _quiet(hass, freezer)
+    assert entry.options["devices"][SPEAKER]["block_entity"] is None
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"{entry.entry_id}_device_cccccccccc01") is None
+    er.async_get(hass).async_update_entity("switch.unifi_speaker_block", disabled_by=None)       # enabled again
+    await _quiet(hass, freezer)
+    assert entry.options["devices"][SPEAKER]["block_entity"] == "switch.unifi_speaker_block"
+    er.async_get(hass).async_remove("switch.unifi_speaker_block")                               # gone
+    await _quiet(hass, freezer)
+    assert entry.options["devices"][SPEAKER]["block_entity"] is None
+
+
+async def test_a_burst_of_switch_changes_reads_the_rules_once(hass, aioclient_mock, unifi, freezer):
+    await add_router(hass)
+    entry = await add_child(hass)
+    await pick_all(hass, entry, [SPEAKER])
+    url = f"{NET}/v2/api/site/default/object-oriented-network-configs"
+    before = sum(1 for call in aioclient_mock.mock_calls if str(call[1]) == url)
+    reg = er.async_get(hass)
+    for i in range(20):                                 # e.g. the UniFi integration reloading
+        reg.async_get_or_create("switch", "unifi", f"something-{i}", suggested_object_id=f"unifi_x{i}")
+        await _quiet(hass, freezer, seconds=1)
+    unifi_switches(hass)
+    await _quiet(hass, freezer)
+    after = sum(1 for call in aioclient_mock.mock_calls if str(call[1]) == url)
+    assert after - before == 1
+    assert entry.options["devices"][SPEAKER]["block_entity"] == "switch.unifi_speaker_block"
+
+
+async def test_a_hand_picked_switch_is_left_alone(hass, unifi, freezer):
+    entry = await setup(hass)
+    hass.config_entries.async_update_entry(entry, options={**entry.options, "devices": {
+        KOBO: {"name": "kobo", "block_entity": "input_boolean.speaker_block", "confirmed": False}}})
+    await hass.async_block_till_done()
+    er.async_get(hass).async_get_or_create("switch", "unifi", "new-thing", suggested_object_id="unifi_new")
+    await _quiet(hass, freezer)
+    assert entry.options["devices"][KOBO]["block_entity"] == "input_boolean.speaker_block"
+
+
+async def test_a_switch_made_before_this_version_is_matched_once_after_loading(hass, unifi, freezer):
+    """A rule and its switch that already existed (e.g. made while on an older version) are picked up after a restart,
+    without any switch change to trigger it."""
+    await add_router(hass)
+    unifi_switches(hass)
+    entry = MockConfigEntry(domain=DOMAIN, title=SAM, unique_id="sam", data={
+        "kind": "child", "child_name": SAM, "block_entity": "input_boolean.sam_block", "router_group": "Sam"},
+        options={"devices": {SPEAKER: {"name": "Den speaker", "block_entity": None, "confirmed": False}}})
+    entry.add_to_hass(hass)
+    from homeassistant.setup import async_setup_component
+    assert await async_setup_component(hass, "input_boolean", {"input_boolean": {"sam_block": {}}})
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    await _quiet(hass, freezer, seconds=30)
+    assert entry.options["devices"][SPEAKER]["block_entity"] is None          # not yet
+    await _quiet(hass, freezer, seconds=31)
+    assert entry.options["devices"][SPEAKER]["block_entity"] == "switch.unifi_speaker_block"

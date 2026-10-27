@@ -163,11 +163,11 @@ class UniFiClient:
         out.sort(key=lambda x: (not x.online, x.name.lower()))
         return out
 
-    async def block_rules(self) -> dict[str, BlockRule]:
+    async def block_rules(self, max_age: float = RULES_TTL) -> dict[str, BlockRule]:
         """Policy Engine objects that turn off internet, keyed by the unique_id of HA's UniFi switch for each.
         Objects that only limit speed, prioritise or route are left out."""
         at, rules = self._rules
-        if time.time() - at < RULES_TTL:
+        if time.time() - at < max_age:
             return rules
         c = await self._cached()
         rules = {}

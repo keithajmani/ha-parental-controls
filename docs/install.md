@@ -1,6 +1,6 @@
 # Installing Parental Controls
 
-Status: Stage 3 (core control, device lists, dashboard card), v0.5.4. Installable as a HACS custom repository.
+Status: Stage 3 (core control, device lists, dashboard card), v0.5.5. Installable as a HACS custom repository.
 
 ## Requirements
 
@@ -53,8 +53,13 @@ Status: Stage 3 (core control, device lists, dashboard card), v0.5.4. Installabl
    For a router type that can't say what a switch's rule targets, a **Device blocking** step follows instead, with a
    picker limited to that router integration's switches, marked "not confirmed".
 9. Configure → **Devices (N)** lists the picked devices under the same two headings. Untick one to remove it from the
-   child's screen and from Home Assistant. Submitting also re-reads each device's own rule from the router, so a rule
-   added or removed on the router since is picked up.
+   child's screen and from Home Assistant.
+
+   Rules are also followed automatically: when the router integration adds, removes, enables or disables a switch,
+   each picked device's own rule is looked up again (once things have been quiet for 10 seconds) and the device moves
+   between Can be blocked and Status & traffic only by itself. Only Parental Controls' own settings change; no switch is
+   turned on or off. The same check also runs once a minute after Home Assistant starts, for rules made while it was
+   down or on an older version. Submitting Configure → Devices does it by hand.
 
 ### How devices are controlled
 
@@ -73,12 +78,13 @@ A device in the child's group that also has its own rule is listed with the grou
 
 - **There is no rule for it on the router.** On UniFi: Settings → Policy Engine → add an object that targets this
   device (Clients), set to No Internet (Secure → Turn off internet). The UniFi Network integration then shows it as a
-  switch. Open Configure → Devices and Submit, and the device moves to Can be blocked.
+  switch, and within about 10 seconds the device moves to Can be blocked by itself, with its block button on the card.
+  (If it doesn't, open Configure → Devices and Submit.)
 - **Its rule only limits speed or prioritises.** Only rules that turn internet off count. Add a No Internet object
   for it (above).
 - **The line says "rule has no switch in HA".** The rule is on the router, but Home Assistant has no switch for it, or
   the switch is disabled. Reload the UniFi Network integration (Settings → Devices & services → UniFi Network → ⋮ →
-  Reload), or enable the rule's switch on the entity's page, then open Configure → Devices and Submit.
+  Reload), or enable the rule's switch on the entity's page; the device then moves to Can be blocked by itself.
 - **It's in another child's group.** That child's Block, Pause and Bedtime cover it; this child's can't. To control it
   from this child's screen too, give it its own No Internet rule (above).
 - **The rule targets a group, not the device.** Rules for another group don't count for this child; only a rule for

@@ -374,10 +374,14 @@ class ChildOptionsFlow(_SwitchCheckMixin, OptionsFlow):
                 return self._save(**{CONF_DEVICES: devices})
             errors["base"] = "none_picked"
 
+        dupes = _duplicate_names({m: c.name for m, c in self._found.items()})
+
         def line(m: str) -> str:
+            # the router's own name is enough to find it in the router's app; the MAC only tells two same-named apart
             c = self._found[m]
             how = f" \u00b7 {level[m]}" if m in level else (" \u00b7 rule has no switch in HA" if m in no_switch else "")
-            return f"{c.name} \u00b7 {'online' if c.online else 'offline'} \u00b7 {m}{how}"
+            mac = f" \u00b7 {m}" if m in dupes else ""
+            return f"{c.name} \u00b7 {'online' if c.online else 'offline'}{mac}{how}"
 
         schema = {}
         for label, macs in self._fields.items():
@@ -386,7 +390,9 @@ class ChildOptionsFlow(_SwitchCheckMixin, OptionsFlow):
                 multiple=True, mode=selector.SelectSelectorMode.LIST))
         return self.async_show_form(step_id="pick", errors=errors, data_schema=vol.Schema(schema),
                                     description_placeholders={
-                                        "count": str(len(self._found)), "pattern": self._pattern, "child": child})
+                                        "count": str(len(self._found)), "pattern": self._pattern, "child": child,
+                                        # placeholders of the v0.5.3 text, for a browser still holding it in cache
+                                        "notes": "", "router_help": ""})
 
     def _rtype(self):
         r = connected_router(self.hass)
@@ -486,15 +492,25 @@ class ChildOptionsFlow(_SwitchCheckMixin, OptionsFlow):
             self._fields[LEVEL] = level
         if status:
             self._fields[STATUS] = status
+        dupes = _duplicate_names({m: d.get("name") or m for m, d in devices.items()})
         schema = {}
         for label, macs in self._fields.items():
             def line(m: str) -> str:
                 status = "" if m not in online else (" · online" if online[m] else " · offline")
                 how = (f" · {self._child}'s group" if mine and mine in self._groups.get(m, [])
                        else " · own block rule" if devices[m].get("block_entity") else "")
-                return f"{devices[m].get('name') or m}{status} · {m}{how}"
+                mac = f" · {m}" if m in dupes else ""
+                return f"{devices[m].get('name') or m}{status}{mac}{how}"
             schema[vol.Optional(label, default=macs)] = selector.SelectSelector(selector.SelectSelectorConfig(
                 options=[selector.SelectOptionDict(value=m, label=line(m)) for m in macs],
                 multiple=True, mode=selector.SelectSelectorMode.LIST))
         return self.async_show_form(step_id="devices", data_schema=vol.Schema(schema),
                                     description_placeholders={"child": self._child})
+
+
+def _duplicate_names(names: dict[str, str]) -> set[str]:
+    """MACs whose name is shared with another listed device (case-insensitive)."""
+    seen: dict[str, list[str]] = {}
+    for mac, name in names.items():
+        seen.setdefault(name.strip().lower(), []).append(mac)
+    return {mac for macs in seen.values() if len(macs) > 1 for mac in macs}

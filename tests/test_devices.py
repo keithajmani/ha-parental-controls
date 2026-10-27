@@ -219,7 +219,8 @@ async def test_missing_device_block_switch_raises_a_repair(hass, unifi, freezer)
     await add_router(hass)
     entry = await add_child(hass)
     hass.config_entries.async_update_entry(entry, options={**entry.options, "devices": {
-        "cc:cc:cc:cc:cc:01": {"name": "Den speaker", "block_entity": "switch.gone", "confirmed": True}}})
+        "cc:cc:cc:cc:cc:01": {"name": "Den speaker", "block_entity": "switch.gone", "confirmed": False}}})
+    # (a hand-picked switch; one found on the router is detached by auto-detect instead, see test_device_rules.py)
     await hass.async_block_till_done()
     for _ in range(12):
         freezer.tick(timedelta(seconds=30)); async_fire_time_changed(hass); await hass.async_block_till_done()

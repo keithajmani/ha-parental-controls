@@ -73,14 +73,14 @@ def alert(kind: str, html: str, title: str | None = None) -> str:
 
 
 # ---- rules ----------------------------------------------------------------------------------------------
-async def switch_rules(hass: HomeAssistant) -> dict[str, BlockRule] | None:
+async def switch_rules(hass: HomeAssistant, fresh: bool = False) -> dict[str, BlockRule] | None:
     """{switch entity_id: rule} for the router integration's switches that turn off internet. None when it can't be
     told: no router, the router type can't map switches to rules, or the router can't be reached."""
     r = connected_router(hass)
     if r is None or r.client is None or not r.type.integration or not hasattr(r.client, "block_rules"):
         return None
     try:
-        rules = await r.client.block_rules()
+        rules = await r.client.block_rules(max_age=0) if fresh else await r.client.block_rules()
     except UniFiError:
         return None
     return {e.entity_id: rules[e.unique_id] for e in er.async_get(hass).entities.values()
