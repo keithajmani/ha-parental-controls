@@ -84,7 +84,8 @@ class ParentalControlsCard extends HTMLElement {
   }
   _call(domain, service, data) { return this._hass.callService(domain, service, data); }
 
-  // ---- block / allow taps: the button dims with a spinner until the switch (or the child's status) confirms --------
+  // ---- block / allow taps: a repeat tap is ignored until the switch (or the child's status) confirms; no answer
+  // within 10 s, or an error, shows a short message saying what is still true ----------------------------------------
   _isBlocked(key) {
     if (key === "child") return !!this._hass.states[this._config.entity]?.attributes?.router_blocked;
     return this._hass.states[key]?.state === "on";
@@ -197,10 +198,8 @@ class ParentalControlsCard extends HTMLElement {
     const launch = this._ids().bedtime ? `<ha-icon class="launch" icon="mdi:open-in-new"></ha-icon>` : "";
     const chip = !a.bedtime_enabled ? `<button class="chip off" id="btchip" title="Bedtime settings"><ha-icon icon="mdi:weather-night"></ha-icon>Bedtime off${launch}</button>`
       : `<button class="chip on" id="btchip" title="Bedtime settings"><ha-icon icon="mdi:weather-night"></ha-icon>Bedtime ${hhmm(start)} \u2013 ${hhmm(a.bedtime_end)}${a.allowed_tonight ? " \u00b7 allowed tonight" : a.bedtime_now ? " \u00b7 active" : ""}${launch}</button>`;
-    const blocking = a.router_blocked, busy = this._pending.child;
-    const btn = busy
-      ? `<button class="globe ${blocking ? "allow" : "block"} busy" id="act" title="${busy.want ? "Blocking" : "Allowing"}" disabled><i class="spin"></i></button>`
-      : blocking
+    const blocking = a.router_blocked;
+    const btn = blocking
       ? `<button class="globe allow" id="act" title="Allow"><ha-icon icon="mdi:web"></ha-icon></button>`
       : `<button class="globe block" id="act" title="Block"><ha-icon icon="mdi:web-off"></ha-icon></button>`;
     return `<ha-card class="status" style="background:${look.bg}">
@@ -251,11 +250,10 @@ class ParentalControlsCard extends HTMLElement {
       // a device with its own rule reads its switch directly, so it turns red as soon as the router confirms
       const sw = r.block_entity ? this._hass.states[r.block_entity] : null;
       const blocked = sw && (sw.state === "on" || sw.state === "off") ? sw.state === "on" : !!r.blocked;
-      const busy = r.block_entity && this._pending[r.block_entity];
       const label = blocked ? "Blocked" : "Online";
       const status = r.online ? `<span class="${blocked ? "red" : "green"}">${label}${where}</span>${bars}` : `Offline \u2022 last seen ${seen(r.last_seen)}`;
       const g = !anyBlock ? "" : r.block_entity
-        ? `<button class="dglobe ${blocked ? "allow" : "block"}${busy ? " busy" : ""}" data-ent="${esc(r.block_entity)}" data-on="${blocked ? 1 : 0}" data-name="${esc(r.name)}" title="${busy ? (busy.want ? "Blocking" : "Allowing") : blocked ? "Allow" : "Block"} ${esc(r.name)}"${busy ? " disabled" : ""}>${busy ? `<i class="spin"></i>` : `<ha-icon icon="${blocked ? "mdi:web" : "mdi:web-off"}"></ha-icon>`}</button>`
+        ? `<button class="dglobe ${blocked ? "allow" : "block"}" data-ent="${esc(r.block_entity)}" data-on="${blocked ? 1 : 0}" data-name="${esc(r.name)}" title="${blocked ? "Allow" : "Block"} ${esc(r.name)}"><ha-icon icon="${blocked ? "mdi:web" : "mdi:web-off"}"></ha-icon></button>`
         : "<span></span>";
       const bw = r.online ? `<span class="bw"><span class="dn">${speed(r.down_bps)}</span><span class="dn">\u2193</span><span class="up">${speed(r.up_bps)}</span><span class="up">\u2191</span></span>` : "<span></span>";
       return `<div class="drow${r.online ? "" : " away"}${anyBlock ? " withb" : ""}"><ha-icon class="kind" icon="${KIND_ICON[r.kind] || KIND_ICON.other}"></ha-icon>
@@ -394,10 +392,6 @@ button.chip { cursor: pointer; }
 .green { color: #81c784; } .red { color: #ef9a9a; }
 .bars { display: inline-flex; margin-left: 8px; align-items: flex-end; gap: 2px; height: 8px; }
 .bars i { display: block; width: 3px; border-radius: 1px; }
-.busy { opacity: .55; cursor: progress; }
-.spin { width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spin { animation: none; border-right-color: currentColor; opacity: .6; } }
 .dglobe { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; --mdc-icon-size: 20px; }
 .bw { display: grid; grid-template-columns: auto 12px; column-gap: 4px; justify-content: end; font-size: 12.5px; line-height: 1.35; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bw .dn { color: #90caf9; } .bw .up { color: #ce93d8; } .bw span:nth-child(odd) { text-align: right; } .bw span:nth-child(even) { text-align: center; }

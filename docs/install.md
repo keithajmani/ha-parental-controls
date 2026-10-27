@@ -1,6 +1,6 @@
 # Installing Parental Controls
 
-Status: Stage 3 (core control, device lists, dashboard card), v0.5.6. Installable as a HACS custom repository.
+Status: Stage 3 (core control, device lists, dashboard card), v0.5.7. Installable as a HACS custom repository.
 
 ## Requirements
 
@@ -128,8 +128,8 @@ One card per child, typically one dashboard view (tab) per child. The card shows
 button, Pause (or Allow for, when blocked) with 15 / 30 / 60 and a Custom slider, and Devices (tap the heading or its arrow to open or close;
 opening it runs a check; Live refreshes every 5 s). Devices in the child's group read red **Blocked** whenever the
 child is blocked (Block, Pause or Bedtime); devices outside it keep their real state; a device that isn't connected
-reads **Offline** with when it was last seen. Tapping a block button dims it with a small spinner until the router confirms (about a second);
-if it doesn't within 10 seconds, the button goes back and a short message says so. A device with its own block rule gets a
+reads **Offline** with when it was last seen. A device's row changes as soon as the router confirms a tap (about a second); if it doesn't within
+10 seconds, a short message says so and what is still true. A device with its own block rule gets a
 block / allow button.
 Tap the Bedtime pill in the status box (the one with the small arrow) to change that child's bedtime: on/off and the
 three times, in a pop-up. After an update, refresh the browser (or the app) once so it loads the new card.

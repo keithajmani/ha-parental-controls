@@ -564,12 +564,12 @@ def test_picked_devices_are_linked_by_device_id_where_home_assistant_supports_it
     assert "via_device" not in info                    # entities never link with the deprecated parameter
 
 
-def test_card_reads_a_device_switch_directly_and_shows_a_pending_tap():
+def test_card_reads_a_device_switch_directly_and_reports_no_answer():
     from pathlib import Path
     js = (Path(__file__).parent.parent / "custom_components/parental_controls/frontend/parental-controls-card.js").read_text()
     # blocked comes from the device's own switch (the Devices list only as a fallback when the switch is missing)
     assert 'const blocked = sw && (sw.state === "on" || sw.state === "off") ? sw.state === "on" : !!r.blocked;' in js
-    # a tap dims the button with a spinner until the switch (or the child's status) confirms, else an error after 10 s
-    assert "setTimeout(() => this._fail(key), 10000)" in js and 'class="spin"' in js and "Couldn't ${p.want" in js
+    # no spinner (the switch answers in about a second); no answer within 10 s shows a short message instead
+    assert "setTimeout(() => this._fail(key), 10000)" in js and 'class="spin"' not in js and "Couldn't ${p.want" in js
     assert '"still blocked" : "still online"' in js         # the message says what is still true
     assert 'this._send("child"' in js and "this._send(ent, want" in js
