@@ -123,7 +123,8 @@ async def test_devices_follow_the_childs_block(hass, unifi):
 
 
 async def pick(hass, entry, pattern, macs):
-    """Options → Add devices → search → tick these MACs (wherever they are listed) → the Device blocking step."""
+    """Options → Add devices → search → tick these MACs (wherever they are listed). Returns the result: the entry is
+    saved straight away, or the Device blocking step when the router can't read its rules."""
     r = await hass.config_entries.options.async_init(entry.entry_id)
     assert r["type"] == "menu"
     r = await hass.config_entries.options.async_configure(r["flow_id"], {"next_step_id": "add_devices"})
@@ -133,9 +134,7 @@ async def pick(hass, entry, pattern, macs):
     for key in r["data_schema"].schema:
         values = [o["value"] for o in r["data_schema"].schema[key].config["options"]]
         ticks[str(key)] = [m for m in macs if m in values]
-    r = await hass.config_entries.options.async_configure(r["flow_id"], ticks)
-    assert r["step_id"] == "block", r
-    return r
+    return await hass.config_entries.options.async_configure(r["flow_id"], ticks)
 
 
 async def test_search_pick_and_block_a_device_outside_the_group(hass, unifi):
@@ -143,11 +142,7 @@ async def test_search_pick_and_block_a_device_outside_the_group(hass, unifi):
     unifi_switches(hass)
     entry = await add_child(hass)
     r = await pick(hass, entry, "speaker", ["cc:cc:cc:cc:cc:01"])
-    field = next(k for k in r["data_schema"].schema if str(k) == "Den speaker: block switch")
-    assert r["data_schema"].schema[field].config["include_entities"] == ["switch.unifi_speaker_block"]
-    r = await hass.config_entries.options.async_configure(
-        r["flow_id"], {"Den speaker: block switch": "switch.unifi_speaker_block"})
-    assert r["type"] == "create_entry"
+    assert r["type"] == "create_entry"                   # its own switch was found: saved with it, nothing to choose
     await hass.async_block_till_done()   # options change reloads the entry
     assert entry.options["devices"]["cc:cc:cc:cc:cc:01"] == {
         "name": "Den speaker", "block_entity": "switch.unifi_speaker_block", "confirmed": True}
@@ -164,9 +159,7 @@ async def test_a_group_member_follows_the_child(hass, unifi):
     unifi_switches(hass)
     entry = await add_child(hass)
     r = await pick(hass, entry, "*ipad*", ["aa:aa:aa:aa:aa:01"])
-    assert "In Sam's group: Block, Pause and Bedtime cover it" in r["description_placeholders"]["devices"]
-    assert list(r["data_schema"].schema) == []          # no rule of its own, nothing to pick
-    r = await hass.config_entries.options.async_configure(r["flow_id"], {})
+    assert r["type"] == "create_entry"
     await hass.async_block_till_done()
     st = await check(hass)
     ipad = next(r for r in st.attributes["devices"] if r["mac"] == "aa:aa:aa:aa:aa:01")

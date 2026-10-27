@@ -96,4 +96,4 @@ class DeviceBlocking(PickedDeviceEntity, SensorEntity):
     @property
     def native_value(self) -> str | None:
         return {"own": "Own block rule", "group": f"Follows {self.ctl.name}",
-                "stats": "Status and statistics only"}.get(self.ctl.devices.control(self.mac))
+                "stats": "Status & traffic only"}.get(self.ctl.devices.control(self.mac))

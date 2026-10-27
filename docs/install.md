@@ -1,6 +1,6 @@
 # Installing Parental Controls
 
-Status: Stage 3 (core control, device lists, dashboard card), v0.5.3. Installable as a HACS custom repository.
+Status: Stage 3 (core control, device lists, dashboard card), v0.5.4. Installable as a HACS custom repository.
 
 ## Requirements
 
@@ -45,25 +45,48 @@ Status: Stage 3 (core control, device lists, dashboard card), v0.5.3. Installabl
    The router is asked what the switch's rule blocks: a green note confirms "this switch blocks the group …"; a red one
    says which group (or single device) it blocks instead and what rule to add on the router. To keep a switch the
    router doesn't confirm (a test toggle, say), submit again unchanged. The same check runs when you add a child.
-8. Configure → **Add devices**: search (e.g. `*kobo*`) and tick devices. Results are listed under headings: the
-   child's group first, then each other group (with a note that the child's Block, Pause and Bedtime won't reach
-   those), then devices in no group. Nothing is ticked to start with, and a device may be picked by two children.
-9. **Device blocking** follows and shows how each picked device will be controlled:
-   - in the child's group: Block, Pause and Bedtime cover it;
-   - its own block rule: when the router has a rule that turns off internet for that one device, its switch is
-     filled in (only switches whose rule targets that device are offered). Clear it to keep the device for status
-     and statistics only;
-   - status and statistics only: no block rule for this device on the router. Add one on the router (UniFi: a Policy
-     Engine object for that device, set to No Internet), then open Configure → **Devices** and Submit; it appears.
+8. Configure → **Add devices**: search (e.g. `*kobo*`) and tick devices. Results are listed under two headings,
+   **Can be blocked** and **Status & traffic only** (see [How devices are controlled](#how-devices-are-controlled)).
+   Nothing is ticked to start with, and a device may be picked by two children. A device's own block switch is found
+   on the router and saved with it; there's nothing more to choose.
 
-   For a router type that can't say what a switch's rule targets, each device gets a picker limited to that router
-   integration's switches, marked "not confirmed".
-10. Configure → **Devices (N)** lists the picked devices under the same headings ("Own block rule" and "Status and
-   statistics only" too). Untick one to remove it from the child's screen and from Home Assistant.
+   For a router type that can't say what a switch's rule targets, a **Device blocking** step follows instead, with a
+   picker limited to that router integration's switches, marked "not confirmed".
+9. Configure → **Devices (N)** lists the picked devices under the same two headings. Untick one to remove it from the
+   child's screen and from Home Assistant. Submitting also re-reads each device's own rule from the router, so a rule
+   added or removed on the router since is picked up.
+
+### How devices are controlled
+
+When you pick devices, each one lands under one of two headings, and its line says why:
+
+- **Can be blocked · <child>'s group**: the device is in the child's router group. The child's Block, Pause and
+  Bedtime cover it, and the card shows it as Blocked whenever the child is.
+- **Can be blocked · own block rule**: the device is outside the child's group but has its own rule on the router that
+  turns its internet off, and Home Assistant has an enabled switch for that rule. The card gives it its own block
+  button. The child's Block, Pause and Bedtime don't touch it, which suits a device shared by two children.
+- **Status & traffic only**: everything else. The card shows its status and traffic, with no block button.
+
+A device in the child's group that also has its own rule is listed with the group, and its own switch is saved too.
+
+#### Why is a device "Status & traffic only", and how do I change that?
+
+- **There is no rule for it on the router.** On UniFi: Settings → Policy Engine → add an object that targets this
+  device (Clients), set to No Internet (Secure → Turn off internet). The UniFi Network integration then shows it as a
+  switch. Open Configure → Devices and Submit, and the device moves to Can be blocked.
+- **Its rule only limits speed or prioritises.** Only rules that turn internet off count. Add a No Internet object
+  for it (above).
+- **The line says "rule has no switch in HA".** The rule is on the router, but Home Assistant has no switch for it, or
+  the switch is disabled. Reload the UniFi Network integration (Settings → Devices & services → UniFi Network → ⋮ →
+  Reload), or enable the rule's switch on the entity's page, then open Configure → Devices and Submit.
+- **It's in another child's group.** That child's Block, Pause and Bedtime cover it; this child's can't. To control it
+  from this child's screen too, give it its own No Internet rule (above).
+- **The rule targets a group, not the device.** Rules for another group don't count for this child; only a rule for
+  this one device, or the child's own group, does.
 
 Each picked device becomes its own device in Home Assistant, connected via the child's device, with:
 **Online** (connectivity; changes only when the device comes or goes at a check), **Blocking** ("Follows <child>",
-"Own block rule" or "Status and statistics only") and, only with its own rule, **Blocked**. There are no speed
+"Own block rule" or "Status & traffic only") and, only with its own rule, **Blocked**. There are no speed
 entities, to keep the recorder quiet. Deleting a picked device from its device page takes it off the child too.
 The "<device> blocked" switches of v0.4 are gone: the card's per-device button switches the router's rule directly.
 
@@ -98,8 +121,8 @@ entity: sensor.riley_parental_controls_internet   # the child's Internet sensor
 One card per child, typically one dashboard view (tab) per child. The card shows the status with a Block / Allow
 button, Pause (or Allow for, when blocked) with 15 / 30 / 60 and a Custom slider, and Devices (tap the heading or its arrow to open or close;
 opening it runs a check; Live refreshes every 5 s). Devices in the child's group read red **Blocked** whenever the
-child is blocked (Block, Pause or Bedtime); devices outside it keep their real state with a small **Stats only** tag; a
-device that isn't connected reads **Offline** with when it was last seen. A device with its own block rule gets a
+child is blocked (Block, Pause or Bedtime); devices outside it keep their real state; a device that isn't connected
+reads **Offline** with when it was last seen. A device with its own block rule gets a
 block / allow button.
 Tap the Bedtime pill in the status box (the one with the small arrow) to change that child's bedtime: on/off and the
 three times, in a pop-up. After an update, refresh the browser (or the app) once so it loads the new card.

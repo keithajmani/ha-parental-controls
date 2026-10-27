@@ -29,8 +29,12 @@ from .const import (CONF_BLOCK_ENTITY, CONF_CHILD_NAME, CONF_DEVICES, CONF_HOST,
 from .devices import router_client
 from .provider import DEFAULT_ROUTER_TYPE, ROUTER_TYPES
 from .rules import (alert, check_block_switch, check_children, connected_router, device_switches, help_md,
+                    unswitched_device_rules,
                     integration_switches, switch_rules, type_of)
 from .unifi import UniFiAuthError, UniFiClient, UniFiError, unifi_session
+
+LEVEL = "Can be blocked"
+STATUS = "Status & traffic only"
 
 # any on/off entity works as a block switch: a router integration's switch, or an input_boolean for testing
 BLOCK_SELECTOR = selector.EntitySelector(selector.EntitySelectorConfig(domain=["switch", "input_boolean"]))
@@ -333,34 +337,56 @@ class ChildOptionsFlow(_SwitchCheckMixin, OptionsFlow):
         return out
 
     async def async_step_pick(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Step 2: tick devices, listed under their group. Nothing is ticked to start with."""
+        """Step 2: tick devices under two headings. Device level blocking: in the child's group, or with its own block
+        rule on the router that Home Assistant has a switch for. Status & traffic only: everything else. Nothing is
+        ticked to start with. When the router can tell which switch blocks a device, that's saved directly; when it
+        can't, the Device blocking step asks."""
         errors: dict[str, str] = {}
+        child, mine = self._child, self._opts().get(CONF_ROUTER_GROUP)
+        rules = await switch_rules(self.hass)
+        own = {m: device_switches(rules, m) for m in self._found} if rules is not None else {}
+        no_switch = await unswitched_device_rules(self.hass) if rules is not None else set()
+        level, status = {}, []
+        for m, c in self._found.items():
+            if mine and mine in c.groups:
+                level[m] = f"{child}'s group"
+            elif own.get(m):
+                level[m] = "own block rule"
+            else:
+                status.append(m)
+        self._fields = {}
+        if level:
+            self._fields[LEVEL] = list(level)
+        if status:
+            self._fields[STATUS] = status
         if user_input is not None:
             picked = [m for label in self._fields for m in user_input.get(label, [])]
             if picked:
                 self._names = {m: self._found[m].name for m in self._found}
                 self._groups = {m: self._found[m].groups for m in self._found}
                 self._block = picked
-                return await self.async_step_block()
+                if rules is None:
+                    return await self.async_step_block()
+                devices = dict(self._opts().get(CONF_DEVICES) or {})
+                for m in picked:
+                    sw = own.get(m) or []
+                    devices[m] = {"name": self._names[m], "block_entity": sw[0] if sw else None, "confirmed": bool(sw)}
+                return self._save(**{CONF_DEVICES: devices})
             errors["base"] = "none_picked"
-        child = self._child
-        self._fields = self._headings(list(self._found), {m: c.groups for m, c in self._found.items()})
+
+        def line(m: str) -> str:
+            c = self._found[m]
+            how = f" \u00b7 {level[m]}" if m in level else (" \u00b7 rule has no switch in HA" if m in no_switch else "")
+            return f"{c.name} \u00b7 {'online' if c.online else 'offline'} \u00b7 {m}{how}"
+
         schema = {}
         for label, macs in self._fields.items():
-            options = [selector.SelectOptionDict(
-                value=m, label=f"{self._found[m].name} · {'online' if self._found[m].online else 'offline'} · {m}")
-                for m in macs]
             schema[vol.Optional(label, default=[])] = selector.SelectSelector(selector.SelectSelectorConfig(
-                options=options, multiple=True, mode=selector.SelectSelectorMode.LIST))
-        notes = "".join(alert("warning", f"Not {child}'s group, so {child}'s Block, Pause and Bedtime won't reach "
-                                         "these. They can still be blocked on their own with a device rule, which "
-                                         "suits a device shared by two children.", title=label)
-                        for label in self._fields if label.startswith("In the "))
+                options=[selector.SelectOptionDict(value=m, label=line(m)) for m in macs],
+                multiple=True, mode=selector.SelectSelectorMode.LIST))
         return self.async_show_form(step_id="pick", errors=errors, data_schema=vol.Schema(schema),
                                     description_placeholders={
-                                        "count": str(len(self._found)), "pattern": self._pattern, "child": child,
-                                        "notes": notes,
-                                        "router_help": help_md(self._rtype(), "device")})
+                                        "count": str(len(self._found)), "pattern": self._pattern, "child": child})
 
     def _rtype(self):
         r = connected_router(self.hass)
@@ -429,17 +455,20 @@ class ChildOptionsFlow(_SwitchCheckMixin, OptionsFlow):
 
     # ---- the Devices list --------------------------------------------------------------------------------
     async def async_step_devices(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Devices on the child's screen, under headings; untick to remove (the device goes from Home Assistant
-        too). Submitting goes on to Device blocking for the ones kept, so new router rules are picked up."""
+        """Devices on the child's screen, under Can be blocked and Status & traffic only; untick to remove (the device
+        goes from Home Assistant too). Submitting re-reads each kept device's own rule, so router changes are picked
+        up."""
         devices = dict(self._opts().get(CONF_DEVICES) or {})
         if user_input is not None:
             kept = {m for label in self._fields for m in user_input.get(label, [])}
             self._kept = {m: d for m, d in devices.items() if m in kept}
-            if not self._kept:
-                return self._save(**{CONF_DEVICES: {}})
-            self._block = list(self._kept)
-            self._names = {m: d.get("name") or m for m, d in self._kept.items()}
-            return await self.async_step_block()
+            rules = await switch_rules(self.hass)
+            if rules is None or not self._kept:     # can't tell: keep each device's switch as it is
+                return self._save(**{CONF_DEVICES: self._kept})
+            for m, d in self._kept.items():          # a rule added or removed on the router since is picked up here
+                sw = device_switches(rules, m)
+                self._kept[m] = {**d, "block_entity": sw[0] if sw else None, "confirmed": bool(sw)}
+            return self._save(**{CONF_DEVICES: self._kept})
         client = router_client(self.hass)
         self._groups, online = {}, {}
         if client is not None and devices:
@@ -449,22 +478,21 @@ class ChildOptionsFlow(_SwitchCheckMixin, OptionsFlow):
                 online = {c.mac: c.online for c in await client.live_clients(list(devices))}
             except UniFiError:
                 pass
-        own = [m for m, d in devices.items() if d.get("block_entity")]
-        rest = [m for m in devices if m not in own]
-        heads = self._headings(rest, self._groups)
-        mine = f"In {self._child}'s group"
+        mine = self._opts().get(CONF_ROUTER_GROUP)
+        level = [m for m, d in devices.items() if d.get("block_entity") or (mine and mine in self._groups.get(m, []))]
+        status = [m for m in devices if m not in level]
         self._fields = {}
-        if mine in heads:
-            self._fields[mine] = heads.pop(mine)
-        if own:
-            self._fields["Own block rule"] = own
-        for label, macs in heads.items():
-            self._fields["Status and statistics only" if label == "Not in any group" else label] = macs
+        if level:
+            self._fields[LEVEL] = level
+        if status:
+            self._fields[STATUS] = status
         schema = {}
         for label, macs in self._fields.items():
             def line(m: str) -> str:
                 status = "" if m not in online else (" · online" if online[m] else " · offline")
-                return f"{devices[m].get('name') or m}{status} · {m}"
+                how = (f" · {self._child}'s group" if mine and mine in self._groups.get(m, [])
+                       else " · own block rule" if devices[m].get("block_entity") else "")
+                return f"{devices[m].get('name') or m}{status} · {m}{how}"
             schema[vol.Optional(label, default=macs)] = selector.SelectSelector(selector.SelectSelectorConfig(
                 options=[selector.SelectOptionDict(value=m, label=line(m)) for m in macs],
                 multiple=True, mode=selector.SelectSelectorMode.LIST))

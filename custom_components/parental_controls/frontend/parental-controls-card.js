@@ -209,16 +209,15 @@ class ParentalControlsCard extends HTMLElement {
       const ap = r.ap ? r.ap.replace(/\s+U\d.*$/, "") : "";   // "Loft U7 Pro" -> "Loft AP"; "Den AP" stays as is
       const where = (ap ? ` \u2022 ${esc(/\bAP$/i.test(ap) ? ap : `${ap} AP`)}` : "") + net;
       // a device in the child's group reads Blocked whenever the child is (Block, Pause or Bedtime); devices outside
-      // the group keep their real state and carry a small "Stats only" tag
+      // the group keep their real state
       const label = r.blocked ? "Blocked" : "Online";
       const status = r.online ? `<span class="${r.blocked ? "red" : "green"}">${label}${where}</span>${bars}` : `Offline \u2022 last seen ${seen(r.last_seen)}`;
-      const tag = r.control === "stats" ? `<span class="tag">Stats only</span>` : "";
       const g = !anyBlock ? "" : r.block_entity
         ? `<button class="dglobe ${r.blocked ? "allow" : "block"}" data-ent="${esc(r.block_entity)}" data-on="${r.blocked ? 1 : 0}" title="${r.blocked ? "Allow" : "Block"} ${esc(r.name)}"><ha-icon icon="${r.blocked ? "mdi:web" : "mdi:web-off"}"></ha-icon></button>`
         : "<span></span>";
       const bw = r.online ? `<span class="bw"><span class="dn">${speed(r.down_bps)}</span><span class="dn">\u2193</span><span class="up">${speed(r.up_bps)}</span><span class="up">\u2191</span></span>` : "<span></span>";
       return `<div class="drow${r.online ? "" : " away"}${anyBlock ? " withb" : ""}"><ha-icon class="kind" icon="${KIND_ICON[r.kind] || KIND_ICON.other}"></ha-icon>
-        <div class="dtext"><div class="dn1"><span>${esc(r.name)}</span>${tag}</div><div class="dn2">${status}</div></div>${g}${bw}</div>`;
+        <div class="dtext"><div class="dn1"><span>${esc(r.name)}</span></div><div class="dn2">${status}</div></div>${g}${bw}</div>`;
     }).join("");
     const foot = a.checked && !live ? `<div class="foot">Checked ${clock(new Date(a.checked))} \u2022 tap Check to refresh</div>` : "";
     return `<ha-card class="group">${head}${body}${foot}</ha-card>`;
@@ -346,8 +345,7 @@ button.chip { cursor: pointer; }
 .drow.withb { grid-template-columns: 28px 1fr 34px 88px; }
 .drow.away { opacity: .65; }
 .kind { --mdc-icon-size: 20px; color: #9fa8da; }
-.dtext { min-width: 0; } .dn1 { font-size: 14px; display: flex; align-items: center; gap: 8px; }
-.tag { font-size: 11px; padding: 1px 7px; border-radius: 8px; background: rgba(127,127,127,0.22); color: var(--secondary-text-color); white-space: nowrap; } .dn2 { font-size: 12px; color: var(--secondary-text-color); }
+.dtext { min-width: 0; } .dn1 { font-size: 14px; display: flex; align-items: center; gap: 8px; } .dn2 { font-size: 12px; color: var(--secondary-text-color); }
 .green { color: #81c784; } .red { color: #ef9a9a; }
 .bars { display: inline-flex; margin-left: 8px; align-items: flex-end; gap: 2px; height: 8px; }
 .bars i { display: block; width: 3px; border-radius: 1px; }

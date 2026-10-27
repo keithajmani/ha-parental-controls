@@ -39,34 +39,46 @@ def options_of(r, label):
 
 async def pick_all(hass, entry, macs):
     r = await pick(hass, entry, "*", macs)
-    defaults = {}
-    for label, key in fields(r).items():
-        sug = (key.description or {}).get("suggested_value")
-        if sug:
-            defaults[label] = sug
-    r = await hass.config_entries.options.async_configure(r["flow_id"], defaults)
     assert r["type"] == "create_entry"
     await hass.async_block_till_done()
     return r
 
 
 # ---- 1. pick devices ------------------------------------------------------------------------------------
-async def test_pick_lists_devices_under_group_headings_with_nothing_ticked(hass, unifi):
+async def test_pick_lists_can_be_blocked_and_status_only_with_nothing_ticked(hass, unifi):
     entry = await setup(hass)
     r = await open_options(hass, entry, "add_devices")
     r = await hass.config_entries.options.async_configure(r["flow_id"], {"pattern": "*"})
     assert r["step_id"] == "pick"
-    assert list(fields(r)) == ["In Sam's group", "In the “Riley” group", "Not in any group"]
+    assert list(fields(r)) == ["Can be blocked", "Status & traffic only"]
     for key in fields(r).values():
         assert key.default() == []                       # nothing pre-selected
-    assert options_of(r, "In Sam's group")[0] == (IPAD, f"Sam's iPad · online · {IPAD}")
-    assert (KOBO, f"kobo · offline · {KOBO}") in options_of(r, "Not in any group")
-    p = r["description_placeholders"]
-    assert p["count"] == "5" and p["pattern"] == "*" and p["child"] == SAM
-    assert 'title="In the “Riley” group"' in p["notes"]
-    assert "Not Sam's group, so Sam's Block, Pause and Bedtime won't reach these." in p["notes"]
-    assert p["router_help"] == ("\n\n**On your UniFi router**  \n"
-                                "Add a Policy Engine object for that device, set to No Internet.")
+    assert options_of(r, "Can be blocked") == [         # the router's order: online first, then by name
+        (IPAD, f"Sam's iPad · online · {IPAD} · Sam's group"),
+        (SPEAKER, f"Den speaker · offline · {SPEAKER} · own block rule"),
+        (LAPTOP, f"Sam's laptop · offline · {LAPTOP} · Sam's group")]
+    # another child's group, and no group at all: neither can be blocked from Sam's screen
+    assert sorted(options_of(r, "Status & traffic only")) == sorted([
+        (KOBO, f"kobo · offline · {KOBO}"), (RILEY_KOBO, f"Riley's Kobo · offline · {RILEY_KOBO}")])
+    assert r["description_placeholders"] == {"count": "5", "pattern": "*", "child": SAM}
+
+
+async def test_a_rule_without_a_switch_in_ha_says_so(hass, unifi):
+    entry = await setup(hass)
+    er.async_get(hass).async_update_entity("switch.unifi_speaker_block", disabled_by=er.RegistryEntryDisabler.USER)
+    await hass.async_block_till_done()
+    r = await open_options(hass, entry, "add_devices")
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"pattern": "speaker"})
+    assert options_of(r, "Status & traffic only") == [
+        (SPEAKER, f"Den speaker · offline · {SPEAKER} · rule has no switch in HA")]
+
+
+async def test_only_internet_off_rules_for_that_one_device_count(hass, unifi):
+    """A speed-limit object, or a rule for another group, doesn't make a device blockable from this child's screen."""
+    entry = await setup(hass)
+    r = await open_options(hass, entry, "add_devices")
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"pattern": "riley"})
+    assert list(fields(r)) == ["Status & traffic only"]   # Riley's group has a block rule, but it's not Sam's
 
 
 async def test_pick_needs_at_least_one_device(hass, unifi):
@@ -92,32 +104,7 @@ async def test_a_device_can_be_picked_by_two_children(hass, unifi):
     assert len(devs) == 2
 
 
-# ---- 2 and 3. device blocking ----------------------------------------------------------------------------
-async def test_device_blocking_summarises_each_device(hass, unifi):
-    entry = await setup(hass)
-    r = await pick(hass, entry, "*", [IPAD, KOBO, SPEAKER])
-    lines = r["description_placeholders"]["devices"]
-    assert "**Sam's iPad**  \nIn Sam's group: Block, Pause and Bedtime cover it" in lines
-    assert "**kobo**  \nStatus and statistics only: no block rule for this device on your router" in lines
-    assert "**Den speaker**  \nNot in Sam's group: has its own block rule (below)" in lines
-    assert list(fields(r)) == ["Den speaker: block switch"]       # only the device with a matched rule
-    key = fields(r)["Den speaker: block switch"]
-    assert key.description["suggested_value"] == "switch.unifi_speaker_block"   # pre-filled
-    assert "Found on your router: this switch's rule turns off internet for this device only." in \
-        r["description_placeholders"]["found"]
-    stats = r["description_placeholders"]["stats"]
-    assert stats.startswith("\n\nTo make a status-and-statistics-only device blockable")
-    assert stats.endswith("**On your UniFi router**  \nAdd a Policy Engine object for that device, set to No Internet.")
-
-
-async def test_clearing_the_switch_keeps_the_device_for_stats_only(hass, unifi):
-    entry = await setup(hass)
-    r = await pick(hass, entry, "speaker", [SPEAKER])
-    r = await hass.config_entries.options.async_configure(r["flow_id"], {})
-    assert r["type"] == "create_entry"
-    assert entry.options["devices"][SPEAKER]["block_entity"] is None
-
-
+# ---- 3. device blocking (only for routers that can't read their rules) ------------------------------------
 async def test_router_without_rule_lookup_gets_an_unconfirmed_picker(hass, aioclient_mock, unifi):
     entry = await setup(hass)
     aioclient_mock.clear_requests()
@@ -129,6 +116,7 @@ async def test_router_without_rule_lookup_gets_an_unconfirmed_picker(hass, aiocl
     aioclient_mock.get(f"{NET}/api/s/default/stat/sta", json={"data": STA})
     aioclient_mock.get(f"{NET}/v2/api/site/default/object-oriented-network-configs", status=404)
     r = await pick(hass, entry, "kobo", [KOBO])
+    assert r["step_id"] == "block"
     label = "kobo: block switch (not confirmed)"
     assert list(fields(r)) == [label]
     allowed = r["data_schema"].schema[fields(r)[label]].config["include_entities"]
@@ -203,10 +191,10 @@ async def test_rows_say_how_each_device_is_controlled(hass, unifi):
     assert rows[SPEAKER]["control"] == "own" and rows[SPEAKER]["blocked"] is False
 
 
-def test_card_shows_offline_and_stats_only():
+def test_card_shows_offline_and_no_tags():
     from pathlib import Path
     js = (Path(__file__).parent.parent / "custom_components/parental_controls/frontend/parental-controls-card.js").read_text()
-    assert "Stats only" in js and 'r.control === "stats"' in js
+    assert "Stats only" not in js and 'class="tag"' not in js   # the card shows status and traffic, no labels
     assert "Offline \\u2022 last seen" in js and "Away" not in js
     assert "/\\bAP$/i.test(ap)" in js                      # an AP already named "... AP" isn't shown as "AP AP"
     assert ".bw span:nth-child(odd) { text-align: right; }" in js   # speeds line up against their arrows
@@ -228,25 +216,33 @@ async def test_options_menu_always_shows_devices(hass, unifi):
     assert r["description_placeholders"] == {"devices": "2"}
 
 
-async def test_devices_list_groups_devices_and_untick_removes(hass, unifi):
+async def test_devices_list_uses_the_same_headings_and_untick_removes(hass, unifi):
     entry = await setup(hass)
     await pick_all(hass, entry, [IPAD, KOBO, SPEAKER, RILEY_KOBO])
     r = await open_options(hass, entry, "devices")
-    assert list(fields(r)) == ["In Sam's group", "Own block rule", "In the “Riley” group",
-                               "Status and statistics only"]
-    assert fields(r)["Own block rule"].default() == [SPEAKER]              # all ticked to start with
-    assert options_of(r, "In Sam's group") == [(IPAD, f"Sam's iPad · online · {IPAD}")]
-    assert options_of(r, "Status and statistics only") == [(KOBO, f"kobo · offline · {KOBO}")]
+    assert list(fields(r)) == ["Can be blocked", "Status & traffic only"]
+    assert fields(r)["Can be blocked"].default() == [IPAD, SPEAKER]          # all ticked to start with
+    assert options_of(r, "Can be blocked") == [(IPAD, f"Sam's iPad · online · {IPAD} · Sam's group"),
+                                               (SPEAKER, f"Den speaker · offline · {SPEAKER} · own block rule")]
+    assert options_of(r, "Status & traffic only") == [(KOBO, f"kobo · offline · {KOBO}"),
+                                                      (RILEY_KOBO, f"Riley's Kobo · offline · {RILEY_KOBO}")]
     r = await hass.config_entries.options.async_configure(r["flow_id"], {
-        "In Sam's group": [IPAD], "Own block rule": [SPEAKER], "In the “Riley” group": [RILEY_KOBO],
-        "Status and statistics only": []})
-    assert r["step_id"] == "block"                                          # rules re-checked for the kept ones
-    r = await hass.config_entries.options.async_configure(r["flow_id"], {
-        "Den speaker: block switch": "switch.unifi_speaker_block"})
+        "Can be blocked": [IPAD, SPEAKER], "Status & traffic only": [RILEY_KOBO]})
     assert r["type"] == "create_entry"
     await hass.async_block_till_done()
     assert set(entry.options["devices"]) == {IPAD, SPEAKER, RILEY_KOBO}
+    assert entry.options["devices"][SPEAKER]["block_entity"] == "switch.unifi_speaker_block"
     assert dr.async_get(hass).async_get_device(identifiers={(DOMAIN, f"{entry.entry_id}_{KOBO}")}) is None
+
+
+async def test_devices_list_picks_up_a_rule_removed_on_the_router(hass, unifi):
+    entry = await setup(hass)
+    await pick_all(hass, entry, [SPEAKER])
+    er.async_get(hass).async_update_entity("switch.unifi_speaker_block", disabled_by=er.RegistryEntryDisabler.USER)
+    await hass.async_block_till_done()
+    r = await open_options(hass, entry, "devices")
+    r = await hass.config_entries.options.async_configure(r["flow_id"], {"Can be blocked": [SPEAKER]})
+    assert entry.options["devices"][SPEAKER]["block_entity"] is None       # its switch is gone: status only now
 
 
 # ---- 7. picked devices in Home Assistant -----------------------------------------------------------------
@@ -261,7 +257,7 @@ async def test_picked_devices_are_sub_devices_of_the_child(hass, unifi):
     await hass.async_block_till_done()
     assert hass.states.get("sensor.den_speaker_blocking").state == "Own block rule"
     assert hass.states.get("sensor.sam_s_ipad_blocking").state == "Follows Sam"
-    assert hass.states.get("sensor.kobo_blocking").state == "Status and statistics only"
+    assert hass.states.get("sensor.kobo_blocking").state == "Status & traffic only"
     assert hass.states.get("binary_sensor.den_speaker_blocked").state == "off"
     assert hass.states.get("binary_sensor.kobo_blocked") is None             # only with its own rule
     assert hass.states.get("binary_sensor.sam_s_ipad_online").state == "unknown"   # until a device check

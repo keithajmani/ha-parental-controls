@@ -84,7 +84,22 @@ async def switch_rules(hass: HomeAssistant) -> dict[str, BlockRule] | None:
     except UniFiError:
         return None
     return {e.entity_id: rules[e.unique_id] for e in er.async_get(hass).entities.values()
-            if e.platform == r.type.integration and e.domain == "switch" and e.unique_id in rules}
+            if e.platform == r.type.integration and e.domain == "switch" and e.unique_id in rules
+            and e.disabled_by is None}
+
+
+async def unswitched_device_rules(hass: HomeAssistant) -> set[str]:
+    """MACs that have their own internet-off rule on the router but no enabled switch for it in Home Assistant."""
+    r = connected_router(hass)
+    if r is None or r.client is None or not r.type.integration or not hasattr(r.client, "block_rules"):
+        return set()
+    try:
+        rules = await r.client.block_rules()
+    except UniFiError:
+        return set()
+    switched = {e.unique_id for e in er.async_get(hass).entities.values()
+                if e.platform == r.type.integration and e.domain == "switch" and e.disabled_by is None}
+    return {rule.macs[0].lower() for uid, rule in rules.items() if len(rule.macs) == 1 and uid not in switched}
 
 
 def device_switches(rules: dict[str, BlockRule], mac: str) -> list[str]:

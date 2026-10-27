@@ -107,7 +107,7 @@
       },
       "pick": {
         "title": "Pick devices",
-        "description": "Found {count} devices for \u201c{pattern}\u201d. Tick the ones to show on {child}'s screen. Only devices in {child}'s group follow their Block, Pause and Bedtime; the rest show with status and statistics only.{notes}\n\nTo block one of the others on its own, your router needs a rule that turns off that device's internet. Home Assistant shows the rule as a switch, and the next step finds it.{router_help}"
+        "description": "Found {count} devices for \u201c{pattern}\u201d. Tick the ones to show on {child}'s screen.\n\n**Can be blocked**: in {child}'s group (Block, Pause and Bedtime cover it), or blocked on its own by a rule on your router.\n\n**Status & traffic only**: shown with status and traffic, but can't be blocked from here. Tap ? to see why and how to change that."
       },
       "block": {
         "title": "Device blocking",

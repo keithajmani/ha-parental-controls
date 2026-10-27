@@ -12,10 +12,10 @@
   "dependencies": [
     "http"
   ],
-  "documentation": "https://github.com/keithajmani/ha-parental-controls",
+  "documentation": "https://github.com/keithajmani/ha-parental-controls/blob/main/docs/install.md#how-devices-are-controlled",
   "integration_type": "hub",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/keithajmani/ha-parental-controls/issues",
   "requirements": [],
-  "version": "0.5.3"
+  "version": "0.5.4"
 }
