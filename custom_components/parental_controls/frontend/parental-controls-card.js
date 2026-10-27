@@ -347,7 +347,7 @@ button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 
 .globe { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; --mdc-icon-size: 24px; }
 .globe.block, .dglobe.block { background: rgba(244,67,54,0.24); color: #ef9a9a; }
 .globe.allow, .dglobe.allow { background: rgba(76,175,80,0.26); color: #a5d6a7; }
-.chiprow { margin: 8px 0 0 46px; }   /* the pill's contents (moon icon) line up with the status text above (Keith's choice) */
+.chiprow { margin: 8px 0 0 46px; }   /* the pill's contents (moon icon) line up with the status text above */
 .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; border-radius: 12px; padding: 4px 10px; --mdc-icon-size: 15px; }
 .chip.off { color: #9e9e9e; background: rgba(127,127,127,0.12); }
 button.chip { cursor: pointer; }
