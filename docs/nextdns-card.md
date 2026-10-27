@@ -14,6 +14,22 @@ background work of its own, and it doesn't need a router or any children set up 
   add the integration and pick **Only the NextDNS apps card**. If you've already added a child or a router, the card
   is there already.
 
+## Where things are set
+
+There are two levels, in two different places:
+
+| What | Where |
+|---|---|
+| Which apps **can** appear | Home Assistant's **NextDNS** integration: turn the app's switch on (below). A switch turned off there can't appear on any card. |
+| Which of those **this card** shows, and its title | The card's own settings (edit the dashboard, then the card). Untick an app to hide it from this card. |
+
+The card can only narrow down; it can't show an app whose switch is turned off. With every app ticked (the
+default), the card follows Home Assistant: turn on a switch and its app appears, in a new group if needed. Once you
+untick something, the card keeps the list you picked, and apps you turn on later need ticking in.
+
+The Parental Controls integration's own settings (Settings → Devices & services → Parental Controls) have nothing
+for this card.
+
 ## Turn on the apps you want
 
 The NextDNS integration makes one switch per app and category for each profile, and **Home Assistant turns all of
