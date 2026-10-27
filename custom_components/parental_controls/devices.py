@@ -1,6 +1,6 @@
 """A child's devices: the router group's members plus devices picked in the child's options.
 
-Fetched only on demand (Check) or while Live is on (every LIVE_INTERVAL seconds, off by itself after
+Fetched only on demand (the Check devices button) or while Live is on (every LIVE_INTERVAL seconds, off by itself after
 LIVE_TIMEOUT). Nothing is polled otherwise, and the device list is kept out of the recorder.
 """
 from __future__ import annotations

@@ -230,13 +230,12 @@ class ParentalControlsCard extends HTMLElement {
     const ds = this._hass.states[ids.devices], live = this._hass.states[ids.devices_live]?.state === "on";
     // the open/close chevron stays beside "Devices" in both states, so a quick open-then-close never lands on Live
     const head = `<div class="dhead" id="dtoggle"><span class="h">Devices <ha-icon class="chev" icon="mdi:chevron-${this._open ? "up" : "down"}"></ha-icon></span>
-      ${this._open ? `<span class="dctl"><button class="check" id="check"><ha-icon icon="mdi:refresh"></ha-icon>Check</button>
-        <button class="live${live ? " on" : ""}" id="live"><i class="dot"></i>Live<i class="sw"><i></i></i></button></span>` : ""}</div>`;
+      ${this._open ? `<span class="dctl"><button class="live${live ? " on" : ""}" id="live"><i class="dot"></i>Live<i class="sw"><i></i></i></button></span>` : ""}</div>`;
     if (!this._open) return `<ha-card class="group">${head}</ha-card>`;
     const a = ds?.attributes || {};
     const rows = a.devices || [];
     const anyBlock = rows.some((r) => r.block_entity);
-    let body = a.error ? `<div class="msg err">${esc(a.error)}</div>` : !a.checked ? `<div class="msg">No data yet. Tap Check.</div>` : "";
+    let body = a.error ? `<div class="msg err">${esc(a.error)}</div>` : !a.checked ? `<div class="msg">No data yet. Turn on Live.</div>` : "";
     if (this._err) body = `<div class="msg err">${esc(this._err)}</div>` + body;
     body += rows.map((r) => {
       const n = r.signal == null ? 0 : r.signal >= -67 ? 3 : r.signal >= -75 ? 2 : 1;
@@ -259,7 +258,7 @@ class ParentalControlsCard extends HTMLElement {
       return `<div class="drow${r.online ? "" : " away"}${anyBlock ? " withb" : ""}"><ha-icon class="kind" icon="${KIND_ICON[r.kind] || KIND_ICON.other}"></ha-icon>
         <div class="dtext"><div class="dn1"><span>${esc(r.name)}</span></div><div class="dn2">${status}</div></div>${g}${bw}</div>`;
     }).join("");
-    const foot = a.checked && !live ? `<div class="foot">Checked ${clock(new Date(a.checked))} \u2022 tap Check to refresh</div>` : "";
+    const foot = a.checked && !live ? `<div class="foot">Checked ${clock(new Date(a.checked))}</div>` : "";
     return `<ha-card class="group">${head}${body}${foot}</ha-card>`;
   }
 
@@ -314,12 +313,11 @@ class ParentalControlsCard extends HTMLElement {
       if (ev.target.closest("button")) return;
       this._open = !this._open;
       // opening turns Live on (its first refresh is immediate, and it still switches itself off after 5 minutes);
-      // without a Live switch it falls back to a single Check
+      // without a Live switch it falls back to a single fetch
       if (this._open) ids.devices_live ? this._call("switch", "turn_on", { entity_id: ids.devices_live }) : this._press("check_devices");
       else if (this._hass.states[ids.devices_live]?.state === "on") this._call("switch", "turn_off", { entity_id: ids.devices_live });
       this._key = null; this._render();
     });
-    $("#check")?.addEventListener("click", () => this._press("check_devices"));
     $("#btoggle")?.addEventListener("click", (ev) => {
       if (ev.target.closest("button")) return;
       this._btOpen = !this._btOpen; this._key = null; this._render();
@@ -377,7 +375,6 @@ button.chip { cursor: pointer; }
 .chev { --mdc-icon-size: 18px; opacity: .7; }
 .hint { font-size: 12.5px; opacity: .7; display: inline-flex; align-items: center; gap: 4px; }
 .dctl { display: flex; gap: 10px; align-items: center; }
-.check { display: inline-flex; gap: 5px; align-items: center; height: 30px; padding: 0 10px; border-radius: 9px; background: rgba(121,134,203,0.2); color: #c5cae9; font-size: 12.5px; --mdc-icon-size: 16px; }
 .live { display: inline-flex; gap: 6px; align-items: center; font-size: 12.5px; opacity: .85; }
 .live .dot { width: 7px; height: 7px; border-radius: 50%; background: #ef5350; opacity: .3; }
 .live.on .dot { opacity: 1; animation: pulse 2.6s ease-in-out infinite; }

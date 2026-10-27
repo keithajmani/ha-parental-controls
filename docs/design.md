@@ -81,7 +81,7 @@ These are the cases in `tests/test_engine.py`, taken from the behaviour of the c
 - Precedence: the child's block always wins for group devices. A device control only adds a restriction; it
   cannot let a device through its child's block.
 - Device status (online, access point, signal, speeds) is fetched only while the Devices view is open (opening it
-  turns Live on, which refreshes every 5 s and stops by itself after 5 minutes) or on Check, never continuously,
+  turns Live on, which refreshes every 5 s and stops by itself after 5 minutes) or by tapping Live, never continuously,
   and is not written to Home Assistant's history.
 
 ## Router providers
@@ -107,7 +107,7 @@ Per child:
 | `number.<child>_pause_minutes` | The Custom slider |
 | `switch.<child>_bedtime` and three `time` entities | Bedtime on/off and its times |
 | `sensor.<child>_devices` | Devices online at the last check; the list (status, AP, signal, speeds, block state) is an unrecorded attribute |
-| `button.<child>_check_devices`, `switch.<child>_live_devices` | Fetch now; refresh every 5 s, off by itself after 5 min (the card turns Live on when Devices is opened) |
+| `button.<child>_check_devices`, `switch.<child>_live_devices` | Fetch now (for automations; the card uses Live); refresh every 5 s, off by itself after 5 min (the card turns Live on when Devices is opened) |
 | Per picked device: `binary_sensor.<device>_online`, `sensor.<device>_blocking`, `binary_sensor.<device>_blocked` | Online at the last check; "Follows <child>" / "Own block rule" / "Status & traffic only"; Blocked only with its own rule (the card switches the router's rule directly) |
 
 Services: `parental_controls.block`, `.allow`, `.pause` (child, minutes), `.refresh_devices` (child).

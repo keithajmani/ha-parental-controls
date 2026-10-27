@@ -111,8 +111,8 @@ shows a **Re-authenticate** prompt for it. Router entries from before v0.5 have 
 If a child's block switch (or a device's own block switch) goes missing or unavailable for 5 minutes, Home Assistant
 shows a notice under **Settings → Repairs** explaining what to fix; it clears itself when the switch is back.
 
-Device status is fetched only when asked (opening Devices on the card, which turns Live on for up to 5 minutes, or
-Check) and the device list is not written to Home Assistant's history.
+Device status is fetched only when asked (opening Devices on the card, or tapping Live, turns Live on for up to 5
+minutes) and the device list is not written to Home Assistant's history.
 
 ### The card
 
@@ -134,8 +134,7 @@ button, Pause (or Allow for, when blocked) with 15 / 30 / 60 and a Custom slider
 
 Devices is closed to start with; tap the heading or its arrow to open or close it. Opening it turns **Live** on: the
 list refreshes every 5 s and Live switches itself off after 5 minutes (or when you close Devices, or tap Live).
-After that the list stays as it was, with "Checked <time>" underneath; tap **Check** for one more refresh, or Live
-again. Each row shows the device's status, access point and signal, and its download and upload speeds.
+After that the list stays as it was, with "Checked <time>" underneath; tap Live again to refresh. Each row shows the device's status, access point and signal, and its download and upload speeds.
 
 Devices in the child's group read red **Blocked** whenever the child is blocked (Block, Pause or Bedtime); devices
 outside it keep their real state; a device that isn't connected reads **Offline** with when it was last seen. A device

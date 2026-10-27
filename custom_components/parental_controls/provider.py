@@ -76,7 +76,7 @@ class RouterProvider(Protocol):
         ...
 
     def live_clients(self, macs: list[str]) -> list[Client]:
-        """Current status and speeds for these devices, fetched on demand only (Devices card Check / Live)."""
+        """Current status and speeds for these devices, fetched on demand only (Live, or the Check devices button)."""
 
     def block_rules(self) -> dict[str, BlockRule]:
         """Optional. The router's internet-off rules keyed by the unique_id of the Home Assistant switch that turns
