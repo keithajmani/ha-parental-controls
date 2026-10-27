@@ -10,7 +10,8 @@ installable from HACS and set up entirely from Home Assistant's UI. It replaces 
 dashboard) with one integration and one card.
 
 In scope: per-child control on a router (block, pause, allow-for, bedtime), per-device control and device status.
-Out of scope: DNS filtering such as NextDNS (a separate integration later).
+Out of scope for the router side: DNS filtering. For NextDNS there is an optional card instead, which uses Home
+Assistant's built-in NextDNS integration and adds nothing of its own: see [nextdns-card.md](nextdns-card.md).
 
 ## Concepts
 
@@ -111,11 +112,16 @@ Per child:
 
 Services: `parental_controls.block`, `.allow`, `.pause` (child, minutes), `.refresh_devices` (child).
 
-Entries: one "router" entry holds the UniFi console address and a view-only login; each child is its own entry. A child's options hold its block switch, router group and picked devices (`{mac: {name, block_entity}}`).
+Entries: one "router" entry holds the UniFi console address and a view-only login; each child is its own entry. An
+optional "apps_card" entry does nothing but serve the cards, for homes that only want the NextDNS apps card. A child's options hold its block switch, router group and picked devices (`{mac: {name, block_entity}}`).
 
 One card, `custom:parental-controls-card` with `entity: sensor.riley_parental_controls_internet`, draws the status card with its Block/Allow button,
 the Pause section and the Devices list. Adding a child in the integration adds its entities; adding a tab is one
 card on a new view.
+
+`custom:parental-controls-apps-card` (optional) shows one NextDNS profile's app and category switches, found through
+the entity registry (platform `nextdns`, the profile's device, translation key `block_<app>`), grouped by a table in
+the card. Tap toggles the switch. Details: [nextdns-card.md](nextdns-card.md).
 
 ## Stages
 

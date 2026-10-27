@@ -5,7 +5,8 @@
         "title": "Parental Controls",
         "menu_options": {
           "child": "Add a child",
-          "router": "Connect a router (for device lists)"
+          "router": "Connect a router (for device lists)",
+          "apps_card": "Only the NextDNS apps card"
         }
       },
       "child": {
@@ -16,6 +17,10 @@
           "block_entity": "Block switch",
           "router_group": "Router group (optional)"
         }
+      },
+      "apps_card": {
+        "title": "NextDNS apps card",
+        "description": "Adds the NextDNS apps card to your dashboards without connecting a router or adding a child. You need Home Assistant's NextDNS integration set up first. You don't need this if you've already added a child or a router: the card is there already.\n\nAfter this, edit a dashboard, add a card and pick Parental Controls NextDNS apps."
       },
       "router": {
         "title": "Router type",

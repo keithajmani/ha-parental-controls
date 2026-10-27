@@ -207,6 +207,49 @@ def test_card_file_is_ascii_and_defines_both_cards():
     js = (Path(__file__).parent.parent / "custom_components/parental_controls/frontend/parental-controls-card.js").read_text()
     assert js.isascii()                       # reads the same whatever charset it is served with
     assert 'define("parental-controls-card"' in js and 'define("parental-controls-settings-card"' in js
+    assert 'define("parental-controls-apps-card"' in js
+
+
+def test_apps_card_knows_every_nextdns_app_and_category():
+    """The card's app table covers each app and category switch of HA's NextDNS integration (block_<id>), and no
+    two share a name. Ids from the NextDNS integration's switch list (HA 2026.10)."""
+    import re
+    from pathlib import Path
+    js = (Path(__file__).parent.parent / "custom_components/parental_controls/frontend/parental-controls-card.js").read_text()
+    table = js[js.index("const APPS = {"):js.index("};", js.index("const APPS = {"))]
+    ids = set(re.findall(r'(?:^|,)\s*"?([a-z0-9_]+)"?: \["', table, re.M))
+    nextdns = """9gag amazon bereal blizzard chatgpt dailymotion discord disneyplus ebay facebook fortnite google_chat hbomax
+        hulu imgur instagram leagueoflegends mastodon messenger minecraft netflix pinterest playstation_network primevideo
+        reddit roblox signal skype snapchat spotify steam telegram tiktok tinder tumblr twitch twitter vimeo vk whatsapp
+        xboxlive youtube zoom dating gambling online_gaming piracy porn social_networks video_streaming""".split()
+    assert ids == set(nextdns)
+    names = re.findall(r': \["([^"]+)"', table)
+    assert len(names) == len(set(names)) == 50
+
+
+async def test_apps_card_only_entry_serves_the_card_and_nothing_else(hass, hass_client):
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    assert "apps_card" in r["menu_options"]
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "apps_card"})
+    assert r["type"] == "form" and r["step_id"] == "apps_card"
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {})
+    assert r["type"] == "create_entry" and r["data"] == {"kind": "apps_card"}
+    await hass.async_block_till_done()
+    entry = hass.config_entries.async_entries(DOMAIN)[0]
+    assert entry.state.value == "loaded"
+    assert not [s for s in hass.states.async_all() if "parental_controls" in s.entity_id]
+    client = await hass_client()
+    resp = await client.get("/parental_controls/parental-controls-card.js")
+    assert resp.status == 200 and 'define("parental-controls-apps-card"' in await resp.text()
+    # only one such entry
+    r = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+    r = await hass.config_entries.flow.async_configure(r["flow_id"], {"next_step_id": "apps_card"})
+    assert r["type"] == "abort" and r["reason"] == "already_configured"
+    # the child services don't take it for a child
+    from homeassistant.exceptions import ServiceValidationError
+    with pytest.raises(ServiceValidationError):
+        await hass.services.async_call(DOMAIN, "block", {"config_entry_id": entry.entry_id}, blocking=True)
+    assert await hass.config_entries.async_unload(entry.entry_id)
 
 
 async def test_missing_block_switch_raises_a_repair_and_clears_it(hass, freezer):

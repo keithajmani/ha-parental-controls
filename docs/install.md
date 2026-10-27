@@ -1,6 +1,6 @@
 # Installing Parental Controls
 
-Status: Stage 3 (core control, device lists, dashboard card), v0.5.8. Installable as a HACS custom repository.
+Status: Stage 3 (core control, device lists, dashboard card), v0.6.0. Installable as a HACS custom repository.
 
 ## Requirements
 
@@ -159,6 +159,11 @@ One card for the whole household: per child, Bedtime on/off and the three times 
 Back on at) with - / + buttons. The same settings stay available on each child's device page.
 
 To remove: delete the integration entries, then the folder, then restart.
+
+### The NextDNS apps card (optional)
+
+Block or allow apps on a NextDNS profile with `custom:parental-controls-apps-card`. It uses Home Assistant's own
+NextDNS integration and works without a router. Setup, options and limits: [nextdns-card.md](nextdns-card.md).
 
 ## Removing it
 

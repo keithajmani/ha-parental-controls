@@ -23,7 +23,7 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
 from .const import (CONF_BLOCK_ENTITY, CONF_CHILD_NAME, CONF_DEVICES, CONF_HOST, CONF_KIND, CONF_PASSWORD,
-                    CONF_ROUTER_GROUP, CONF_SITE, CONF_USERNAME, DOMAIN, KIND_ROUTER, MAX_PAUSE_MINUTES,
+                    CONF_ROUTER_GROUP, CONF_SITE, CONF_USERNAME, DOMAIN, KIND_APPS_CARD, KIND_ROUTER, MAX_PAUSE_MINUTES,
                     MIN_PAUSE_MINUTES)
 from .controller import ChildController
 from .devices import ChildDevices
@@ -90,7 +90,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     def child(call: ServiceCall) -> ChildController:
         entry = hass.config_entries.async_get_entry(call.data[ATTR_CHILD])
-        if (entry is None or entry.domain != DOMAIN or entry.data.get(CONF_KIND) == KIND_ROUTER
+        if (entry is None or entry.domain != DOMAIN or entry.data.get(CONF_KIND) in (KIND_ROUTER, KIND_APPS_CARD)
                 or not hasattr(entry, "runtime_data")):
             raise ServiceValidationError(translation_domain=DOMAIN, translation_key="unknown_child")
         return entry.runtime_data
@@ -116,6 +116,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ParentalControlsConfigEntry) -> bool:
+    if entry.data.get(CONF_KIND) == KIND_APPS_CARD:
+        return True   # async_setup already serves the cards
     if entry.data.get(CONF_KIND) == KIND_ROUTER:
         # the router entry only holds the (view-only) login; children use it for their Devices list
         client = UniFiClient(unifi_session(hass), entry.data[CONF_HOST],
@@ -245,7 +247,7 @@ def _remove_unpicked(hass: HomeAssistant, entry: ConfigEntry, picked: dict) -> N
 
 async def async_remove_config_entry_device(hass: HomeAssistant, entry: ConfigEntry, device: dr.DeviceEntry) -> bool:
     """Delete on a picked device's page: take it off the child (the child's own device can't be deleted)."""
-    if entry.data.get(CONF_KIND) == KIND_ROUTER or (DOMAIN, entry.entry_id) in device.identifiers:
+    if entry.data.get(CONF_KIND) in (KIND_ROUTER, KIND_APPS_CARD) or (DOMAIN, entry.entry_id) in device.identifiers:
         return False
     prefix = f"{entry.entry_id}_"
     macs = [i[1][len(prefix):] for i in device.identifiers if i[0] == DOMAIN and i[1].startswith(prefix)]
@@ -259,7 +261,7 @@ async def async_remove_config_entry_device(hass: HomeAssistant, entry: ConfigEnt
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ParentalControlsConfigEntry) -> bool:
-    if entry.data.get(CONF_KIND) == KIND_ROUTER:
+    if entry.data.get(CONF_KIND) in (KIND_ROUTER, KIND_APPS_CARD):
         return True
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:

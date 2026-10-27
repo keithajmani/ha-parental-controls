@@ -5,6 +5,7 @@ Add integration → Parental Controls offers two kinds of entry:
   group is the child's, so its devices can be listed. One entry per child, any number of children.
 - "Connect a router": the router type, then the console and a view-only login, used for device search, the Devices
   list and checking which switch blocks what. Blocking never needs it: blocks go through Home Assistant switches.
+- "Only the NextDNS apps card": for homes without a supported router. The entry does nothing but serve the cards.
   The router entry can be reconfigured (type, address, login) and asks to re-authenticate when the login stops working.
 
 A child's options: the block switch and group (checked against the router's rules where the router can tell), add
@@ -25,7 +26,7 @@ from homeassistant.util import slugify
 
 from .const import (CONF_BLOCK_ENTITY, CONF_CHILD_NAME, CONF_DEVICES, CONF_HOST, CONF_KIND, CONF_PASSWORD,
                     CONF_PATTERN, CONF_ROUTER_GROUP, CONF_SITE, CONF_USERNAME, CONF_VENDOR, DOMAIN,
-                    KIND_CHILD, KIND_ROUTER)
+                    KIND_APPS_CARD, KIND_CHILD, KIND_ROUTER)
 from .devices import router_client
 from .provider import DEFAULT_ROUTER_TYPE, ROUTER_TYPES
 from .rules import (alert, check_block_switch, check_children, connected_router, device_switches, help_md,
@@ -95,7 +96,7 @@ class ParentalControlsConfigFlow(_SwitchCheckMixin, ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        return self.async_show_menu(step_id="user", menu_options=["child", "router"])
+        return self.async_show_menu(step_id="user", menu_options=["child", "router", "apps_card"])
 
     async def async_step_child(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
@@ -125,6 +126,14 @@ class ParentalControlsConfigFlow(_SwitchCheckMixin, ConfigFlow, domain=DOMAIN):
             schema = self.add_suggested_values_to_schema(schema, user_input)
         return self.async_show_form(step_id="child", errors=errors, data_schema=schema,
                                     description_placeholders={"check": check})
+
+    async def async_step_apps_card(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """The cards are served whenever any entry exists; this one is for homes that want only the NextDNS card."""
+        await self.async_set_unique_id(KIND_APPS_CARD)
+        self._abort_if_unique_id_configured()
+        if user_input is not None:
+            return self.async_create_entry(title="NextDNS apps card", data={CONF_KIND: KIND_APPS_CARD})
+        return self.async_show_form(step_id="apps_card", data_schema=vol.Schema({}))
 
     # ---- router -----------------------------------------------------------------------------------------
     async def async_step_router(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

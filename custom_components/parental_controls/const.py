@@ -14,10 +14,12 @@ SWITCH_GRACE = timedelta(minutes=5)    # a block switch must be missing/unavaila
 
 STORAGE_VERSION = 1
 
-# entry kinds: one "router" entry (UniFi login) and one "child" entry per child
+# entry kinds: one "router" entry (UniFi login), one "child" entry per child, and an "apps_card" entry for homes that
+# only want the NextDNS apps card (it serves the card; nothing else)
 CONF_KIND = "kind"
 KIND_CHILD = "child"
 KIND_ROUTER = "router"
+KIND_APPS_CARD = "apps_card"
 CONF_HOST = "host"
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
