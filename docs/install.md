@@ -1,6 +1,6 @@
 # Installing Parental Controls
 
-Status: Stage 3 (core control, device lists, dashboard card), v0.6.0. Installable as a HACS custom repository.
+Status: Stage 3 (core control, device lists, dashboard card), v0.6.1. Installable as a HACS custom repository.
 
 ## Requirements
 

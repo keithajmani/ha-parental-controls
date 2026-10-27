@@ -557,7 +557,7 @@ class ParentalControlsSettingsCardEditor extends HTMLElement {
  *
  *   type: custom:parental-controls-apps-card
  *   profile: <device id of the NextDNS profile>      (the editor lists them)
- *   # title: Kids' apps                                 (optional; default "<profile> apps")
+ *   # title: Kids' apps                                 (optional; default: the profile's name)
  *   # apps: [instagram, youtube, minecraft]             (optional; default every app switch turned on in HA)
  *   # icons: { roblox: mdi:cube-outline }               (optional; per-app icon)
  *
@@ -676,7 +676,7 @@ class ParentalControlsAppsCard extends HTMLElement {
   _render() {
     const hass = this._hass, profile = this._config.profile;
     const name = deviceName(hass, profile);
-    const title = this._config.title ?? (name ? `${name} apps` : "Apps");
+    const title = this._config.title ?? (name || "Apps");
     const head = `<style>${APPS_CSS}</style>${title ? `<div class="title">${esc(title)}</div>` : ""}`;
     if (!profile || !name) {
       this.shadowRoot.innerHTML = `${head}<ha-card class="grp"><div class="msg">Pick a NextDNS profile in this card's settings. The NextDNS integration has to be set up first.</div></ha-card>`;
@@ -742,7 +742,7 @@ class ParentalControlsAppsCardEditor extends HTMLElement {
     if (!this._hass || !this._config) return;
     if (!this._form) {
       this._form = document.createElement("ha-form");
-      this._form.computeLabel = (s) => ({ profile: "NextDNS profile", title: "Title (optional)" })[s.name] || s.label || s.name;
+      this._form.computeLabel = (s) => ({ profile: "NextDNS profile", title: "Title (optional; default: the profile's name)" })[s.name] || s.label || s.name;
       this._form.addEventListener("value-changed", (ev) => this._changed(ev.detail.value));
       this._hint = document.createElement("div");
       this._hint.style.cssText = "font-size:13px;color:var(--secondary-text-color);line-height:1.45;margin-top:12px";

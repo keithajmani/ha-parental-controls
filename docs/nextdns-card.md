@@ -54,7 +54,8 @@ What this does, and doesn't do:
 Edit a dashboard → Add card → **Parental Controls NextDNS apps**. In the card's settings:
 
 - **NextDNS profile**: the profile to control.
-- **Title**: optional. The default is "<profile> apps".
+- **Title**: optional. The default is the profile's name as Home Assistant shows it (the NextDNS device's name; rename
+  the device to change it everywhere).
 - One tick list per group, of the apps turned on in Home Assistant. Untick any you don't want on this card.
   With everything ticked, apps you turn on later appear by themselves.
 
@@ -63,7 +64,7 @@ Or in YAML:
 ```yaml
 type: custom:parental-controls-apps-card
 profile: 0123456789abcdef0123456789abcdef   # the profile's device id (the editor fills it in)
-# title: Kids' apps                          (optional)
+# title: Kids' apps                          (optional; default: the profile's name)
 # apps: [instagram, youtube, roblox]         (optional; default: every app switch turned on in HA)
 # icons: { roblox: "mdi:cube-outline" }      (optional; per-app icon)
 ```
