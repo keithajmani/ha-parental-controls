@@ -40,11 +40,14 @@ class ParentalControlsCard extends HTMLElement {
     if (!config || !config.entity) throw new Error("Pick the child's Internet sensor (sensor.<child>_parental_controls_internet)");
     this._config = config;
     this._open = false;
+    this._pending = {};   // entity (or "child") -> {want, name, timer}: a block/allow sent, not yet confirmed
+    this._err = null;
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
   }
 
   set hass(hass) {
     this._hass = hass;
+    this._settlePending();
     const key = this._watched().map((e) => { const s = hass.states[e]; return s ? s.last_updated + s.state : ""; }).join("|") + this._open;
     if (key !== this._key) { this._key = key; this._render(); }
   }
@@ -80,6 +83,38 @@ class ParentalControlsCard extends HTMLElement {
     return list;
   }
   _call(domain, service, data) { return this._hass.callService(domain, service, data); }
+
+  // ---- block / allow taps: the button dims with a spinner until the switch (or the child's status) confirms --------
+  _isBlocked(key) {
+    if (key === "child") return !!this._hass.states[this._config.entity]?.attributes?.router_blocked;
+    return this._hass.states[key]?.state === "on";
+  }
+  _send(key, want, name, run) {
+    if (this._pending[key]) return;
+    const timer = setTimeout(() => this._fail(key), 10000);
+    this._pending[key] = { want, name, timer };
+    this._key = null; this._render();
+    Promise.resolve().then(run).catch((err) => this._fail(key, err));
+  }
+  _settlePending() {
+    let changed = false;
+    for (const [key, p] of Object.entries(this._pending || {})) {
+      if (this._isBlocked(key) === p.want) { clearTimeout(p.timer); delete this._pending[key]; changed = true; }
+    }
+    if (changed) this._key = null;
+  }
+  _fail(key, err) {
+    const p = this._pending[key];
+    if (!p) return;
+    clearTimeout(p.timer); delete this._pending[key];
+    // say what is still true, from the switch itself
+    const why = err ? `: ${err.message || err}` : ": no answer from the router";
+    const now = this._isBlocked(key) ? "still blocked" : "still online";
+    this._err = `Couldn't ${p.want ? "block" : "allow"} ${p.name}${why}. It's ${now}.`;
+    clearTimeout(this._errTimer);
+    this._errTimer = setTimeout(() => { this._err = null; this._key = null; this._render(); }, 8000);
+    this._key = null; this._render();
+  }
   _press(key) { const id = this._ids()[key]; if (id) this._call("button", "press", { entity_id: id }); }
 
   // ---- render -----------------------------------------------------------------------------------------
@@ -162,8 +197,10 @@ class ParentalControlsCard extends HTMLElement {
     const launch = this._ids().bedtime ? `<ha-icon class="launch" icon="mdi:open-in-new"></ha-icon>` : "";
     const chip = !a.bedtime_enabled ? `<button class="chip off" id="btchip" title="Bedtime settings"><ha-icon icon="mdi:weather-night"></ha-icon>Bedtime off${launch}</button>`
       : `<button class="chip on" id="btchip" title="Bedtime settings"><ha-icon icon="mdi:weather-night"></ha-icon>Bedtime ${hhmm(start)} \u2013 ${hhmm(a.bedtime_end)}${a.allowed_tonight ? " \u00b7 allowed tonight" : a.bedtime_now ? " \u00b7 active" : ""}${launch}</button>`;
-    const blocking = a.router_blocked;
-    const btn = blocking
+    const blocking = a.router_blocked, busy = this._pending.child;
+    const btn = busy
+      ? `<button class="globe ${blocking ? "allow" : "block"} busy" id="act" title="${busy.want ? "Blocking" : "Allowing"}" disabled><i class="spin"></i></button>`
+      : blocking
       ? `<button class="globe allow" id="act" title="Allow"><ha-icon icon="mdi:web"></ha-icon></button>`
       : `<button class="globe block" id="act" title="Block"><ha-icon icon="mdi:web-off"></ha-icon></button>`;
     return `<ha-card class="status" style="background:${look.bg}">
@@ -201,6 +238,7 @@ class ParentalControlsCard extends HTMLElement {
     const rows = a.devices || [];
     const anyBlock = rows.some((r) => r.block_entity);
     let body = a.error ? `<div class="msg err">${esc(a.error)}</div>` : !a.checked ? `<div class="msg">No data yet. Tap Check.</div>` : "";
+    if (this._err) body = `<div class="msg err">${esc(this._err)}</div>` + body;
     body += rows.map((r) => {
       const n = r.signal == null ? 0 : r.signal >= -67 ? 3 : r.signal >= -75 ? 2 : 1;
       const col = n === 3 ? "#66bb6a" : n === 2 ? "#ffca28" : "#ef5350";
@@ -210,10 +248,14 @@ class ParentalControlsCard extends HTMLElement {
       const where = (ap ? ` \u2022 ${esc(/\bAP$/i.test(ap) ? ap : `${ap} AP`)}` : "") + net;
       // a device in the child's group reads Blocked whenever the child is (Block, Pause or Bedtime); devices outside
       // the group keep their real state
-      const label = r.blocked ? "Blocked" : "Online";
-      const status = r.online ? `<span class="${r.blocked ? "red" : "green"}">${label}${where}</span>${bars}` : `Offline \u2022 last seen ${seen(r.last_seen)}`;
+      // a device with its own rule reads its switch directly, so it turns red as soon as the router confirms
+      const sw = r.block_entity ? this._hass.states[r.block_entity] : null;
+      const blocked = sw && (sw.state === "on" || sw.state === "off") ? sw.state === "on" : !!r.blocked;
+      const busy = r.block_entity && this._pending[r.block_entity];
+      const label = blocked ? "Blocked" : "Online";
+      const status = r.online ? `<span class="${blocked ? "red" : "green"}">${label}${where}</span>${bars}` : `Offline \u2022 last seen ${seen(r.last_seen)}`;
       const g = !anyBlock ? "" : r.block_entity
-        ? `<button class="dglobe ${r.blocked ? "allow" : "block"}" data-ent="${esc(r.block_entity)}" data-on="${r.blocked ? 1 : 0}" title="${r.blocked ? "Allow" : "Block"} ${esc(r.name)}"><ha-icon icon="${r.blocked ? "mdi:web" : "mdi:web-off"}"></ha-icon></button>`
+        ? `<button class="dglobe ${blocked ? "allow" : "block"}${busy ? " busy" : ""}" data-ent="${esc(r.block_entity)}" data-on="${blocked ? 1 : 0}" data-name="${esc(r.name)}" title="${busy ? (busy.want ? "Blocking" : "Allowing") : blocked ? "Allow" : "Block"} ${esc(r.name)}"${busy ? " disabled" : ""}>${busy ? `<i class="spin"></i>` : `<ha-icon icon="${blocked ? "mdi:web" : "mdi:web-off"}"></ha-icon>`}</button>`
         : "<span></span>";
       const bw = r.online ? `<span class="bw"><span class="dn">${speed(r.down_bps)}</span><span class="dn">\u2193</span><span class="up">${speed(r.up_bps)}</span><span class="up">\u2191</span></span>` : "<span></span>";
       return `<div class="drow${r.online ? "" : " away"}${anyBlock ? " withb" : ""}"><ha-icon class="kind" icon="${KIND_ICON[r.kind] || KIND_ICON.other}"></ha-icon>
@@ -255,7 +297,10 @@ class ParentalControlsCard extends HTMLElement {
 
   _wire(st, a, ids) {
     const $ = (s) => this.shadowRoot.querySelector(s);
-    $("#act")?.addEventListener("click", () => this._press(a.router_blocked ? "allow" : "block"));
+    $("#act")?.addEventListener("click", () => {
+      const want = !a.router_blocked, id = this._ids()[want ? "block" : "allow"];
+      if (id) this._send("child", want, a.child || "the child", () => this._call("button", "press", { entity_id: id }));
+    });
     this.shadowRoot.querySelectorAll(".tile").forEach((t) => t.addEventListener("click", () =>
       this._call("parental_controls", "pause", { config_entry_id: a.config_entry_id, minutes: Number(t.dataset.min) })));
     const slider = $("#slider");
@@ -284,8 +329,8 @@ class ParentalControlsCard extends HTMLElement {
     this._wireSteps(this.shadowRoot);
     $("#live")?.addEventListener("click", () => this._call("switch", "toggle", { entity_id: ids.devices_live }));
     this.shadowRoot.querySelectorAll(".dglobe").forEach((b) => b.addEventListener("click", () => {
-      const ent = b.dataset.ent;
-      this._call(ent.split(".")[0], b.dataset.on === "1" ? "turn_off" : "turn_on", { entity_id: ent });
+      const ent = b.dataset.ent, want = b.dataset.on !== "1";
+      this._send(ent, want, b.dataset.name, () => this._call(ent.split(".")[0], want ? "turn_on" : "turn_off", { entity_id: ent }));
     }));
   }
 }
@@ -349,6 +394,10 @@ button.chip { cursor: pointer; }
 .green { color: #81c784; } .red { color: #ef9a9a; }
 .bars { display: inline-flex; margin-left: 8px; align-items: flex-end; gap: 2px; height: 8px; }
 .bars i { display: block; width: 3px; border-radius: 1px; }
+.busy { opacity: .55; cursor: progress; }
+.spin { width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; border-right-color: currentColor; opacity: .6; } }
 .dglobe { width: 34px; height: 34px; border-radius: 10px; display: flex; align-items: center; justify-content: center; --mdc-icon-size: 20px; }
 .bw { display: grid; grid-template-columns: auto 12px; column-gap: 4px; justify-content: end; font-size: 12.5px; line-height: 1.35; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .bw .dn { color: #90caf9; } .bw .up { color: #ce93d8; } .bw span:nth-child(odd) { text-align: right; } .bw span:nth-child(even) { text-align: center; }

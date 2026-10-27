@@ -134,6 +134,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ParentalControlsConfigEn
     await ctl.async_start()
     entry.runtime_data = ctl
     _remove_unpicked(hass, entry, ctl.devices.configured)
+    _register_devices(hass, entry, ctl)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     entry.async_create_background_task(hass, ctl.devices.async_load_members(), f"{DOMAIN} group members")
@@ -207,6 +208,25 @@ async def async_sync_device_switches(hass: HomeAssistant, entry: ConfigEntry) ->
     if changed:
         hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_DEVICES: devices})
     return changed
+
+
+def _register_devices(hass: HomeAssistant, entry: ConfigEntry, ctl: ChildController) -> None:
+    """The child's device, then each picked device linked to it ("connected via"). Linked by the child device's id
+    where Home Assistant supports it (2026.10 deprecates via_device), else by its identifier on older versions."""
+    from .entity import child_device_info
+    devreg = dr.async_get(hass)
+    child = devreg.async_get_or_create(config_entry_id=entry.entry_id, **child_device_info(ctl))
+    for mac, cfg in ({**entry.data, **entry.options}.get(CONF_DEVICES) or {}).items():
+        devreg.async_get_or_create(config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{entry.entry_id}_{mac}")},
+                                   name=cfg.get("name") or mac, manufacturer="Parental Controls",
+                                   model="Picked device", serial_number=mac, **_via(child, entry.entry_id))
+
+
+def _via(child: dr.DeviceEntry, entry_id: str) -> dict:
+    import inspect
+    if "via_device_id" in inspect.signature(dr.DeviceRegistry.async_get_or_create).parameters:
+        return {"via_device_id": child.id}
+    return {"via_device": (DOMAIN, entry_id)}
 
 
 def _remove_unpicked(hass: HomeAssistant, entry: ConfigEntry, picked: dict) -> None:

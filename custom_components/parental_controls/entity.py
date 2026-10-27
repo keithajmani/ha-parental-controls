@@ -16,13 +16,7 @@ class ChildEntity(Entity):
         self.ctl = ctl
         self._attr_translation_key = key
         self._attr_unique_id = f"{ctl.entry_id}_{key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, ctl.entry_id)},
-            name=f"{ctl.name} Parental Controls",
-            manufacturer="Parental Controls",
-            model="Child",
-            entry_type=DeviceEntryType.SERVICE,
-        )
+        self._attr_device_info = DeviceInfo(**child_device_info(ctl))
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(self.ctl.add_listener(self.async_write_ha_state))
@@ -48,11 +42,11 @@ class PickedDeviceEntity(Entity):
 
 
 def picked_device_info(ctl: ChildController, mac: str, cfg: dict) -> DeviceInfo:
-    return DeviceInfo(
-        identifiers={(DOMAIN, f"{ctl.entry_id}_{mac}")},
-        name=cfg.get("name") or mac,
-        manufacturer="Parental Controls",
-        model="Picked device",
-        serial_number=mac,
-        via_device=(DOMAIN, ctl.entry_id),
-    )
+    # The device itself, and its link to the child's device, are registered by __init__ before the entities load
+    # (Home Assistant 2026.10 deprecates linking with via_device from an entity).
+    return DeviceInfo(identifiers={(DOMAIN, f"{ctl.entry_id}_{mac}")})
+
+
+def child_device_info(ctl: ChildController) -> dict:
+    return {"identifiers": {(DOMAIN, ctl.entry_id)}, "name": f"{ctl.name} Parental Controls",
+            "manufacturer": "Parental Controls", "model": "Child", "entry_type": DeviceEntryType.SERVICE}

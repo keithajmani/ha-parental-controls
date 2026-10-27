@@ -540,3 +540,36 @@ async def test_a_switch_made_before_this_version_is_matched_once_after_loading(h
     assert entry.options["devices"][SPEAKER]["block_entity"] is None          # not yet
     await _quiet(hass, freezer, seconds=31)
     assert entry.options["devices"][SPEAKER]["block_entity"] == "switch.unifi_speaker_block"
+
+
+def test_picked_devices_are_linked_by_device_id_where_home_assistant_supports_it(monkeypatch):
+    """HA 2026.10 deprecates via_device; the child device's id is used where async_get_or_create takes via_device_id,
+    and the identifier only on older versions (the minimum in hacs.json)."""
+    from types import SimpleNamespace
+    from homeassistant.helpers import device_registry
+    from custom_components.parental_controls import _via
+    from custom_components.parental_controls.entity import picked_device_info
+    child = SimpleNamespace(id="child-device-id")
+
+    def new_style(self, *, config_entry_id, via_device_id=None, **kw):
+        pass
+    monkeypatch.setattr(device_registry.DeviceRegistry, "async_get_or_create", new_style)
+    assert _via(child, "entry1") == {"via_device_id": "child-device-id"}
+
+    def old_style(self, *, config_entry_id, via_device=None, **kw):
+        pass
+    monkeypatch.setattr(device_registry.DeviceRegistry, "async_get_or_create", old_style)
+    assert _via(child, "entry1") == {"via_device": (DOMAIN, "entry1")}
+    info = picked_device_info(SimpleNamespace(entry_id="entry1"), SPEAKER, {"name": "Den speaker"})
+    assert "via_device" not in info                    # entities never link with the deprecated parameter
+
+
+def test_card_reads_a_device_switch_directly_and_shows_a_pending_tap():
+    from pathlib import Path
+    js = (Path(__file__).parent.parent / "custom_components/parental_controls/frontend/parental-controls-card.js").read_text()
+    # blocked comes from the device's own switch (the Devices list only as a fallback when the switch is missing)
+    assert 'const blocked = sw && (sw.state === "on" || sw.state === "off") ? sw.state === "on" : !!r.blocked;' in js
+    # a tap dims the button with a spinner until the switch (or the child's status) confirms, else an error after 10 s
+    assert "setTimeout(() => this._fail(key), 10000)" in js and 'class="spin"' in js and "Couldn't ${p.want" in js
+    assert '"still blocked" : "still online"' in js         # the message says what is still true
+    assert 'this._send("child"' in js and "this._send(ent, want" in js
